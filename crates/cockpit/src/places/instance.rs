@@ -277,28 +277,7 @@ impl InstancePlace {
                 }
             }
             if let Some(m) = &model {
-                // Infer traversed sequence flows: for each activity instance B, the predecessor A whose
-                // instance ended right before B started.
-                let mut sorted: Vec<&HistoricActivityInstance> = h.iter().filter(|a| !a.is_multi_instance_body()).collect();
-                sorted.sort_by(|a, b| a.start_time.cmp(&b.start_time));
-                let ts = |s: &Option<String>| s.as_deref().and_then(crate::util::parse_time).map(|t| t.timestamp_millis());
-                for b in &sorted {
-                    let Some(bi) = m.element_idx(b.base_activity_id()) else { continue };
-                    let Some(bs) = ts(&b.start_time) else { continue };
-                    let mut best: Option<(i64, usize)> = None;
-                    for (flow, ai_idx) in m.predecessors(bi) {
-                        let aid = &m.elements[ai_idx].id;
-                        for a in sorted.iter().filter(|a| a.base_activity_id() == aid) {
-                            let Some(ae) = ts(&a.end_time) else { continue };
-                            if ae <= bs + 1500 && best.map(|(t, _)| ae > t).unwrap_or(true) {
-                                best = Some((ae, flow));
-                            }
-                        }
-                    }
-                    if let Some((_, f)) = best {
-                        o.traversed_flows.insert(f);
-                    }
-                }
+                o.traversed_flows = crate::history::infer_traversed_flows(m, h);
             }
         }
         for (act, j) in timers {

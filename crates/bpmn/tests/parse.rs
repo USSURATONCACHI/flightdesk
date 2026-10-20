@@ -120,3 +120,36 @@ fn real_world_files() {
     }
     assert!(n > 0);
 }
+
+#[test]
+fn element_search_semantics() {
+    let m = fixture();
+    use bpmn::search::{search, SearchOptions};
+    let all = SearchOptions { include_flows: true, ..Default::default() };
+    // every word must match (in any field), case-insensitively
+    assert_eq!(search(&m, "APPROVE large", &all).len(), 1);
+    assert_eq!(search(&m, "approve nonsense", &all).len(), 0);
+    // implementation attributes, listeners and I/O are searchable
+    assert_eq!(search(&m, "AuditListener", &all)[0].field, "listener");
+    assert_eq!(search(&m, "orderJson", &all)[0].field, "io");
+    // conditions on flows are found only when flows are included
+    assert!(!search(&m, "amount > 1000", &SearchOptions::default()).iter().any(|m| matches!(m.target, Ref::Flow(_))));
+    // category filter restricts to that kind
+    let gw = search(&m, "gateway", &SearchOptions { categories: vec!["gateway".into()], ..Default::default() });
+    assert!(gw.iter().all(|r| matches!(r.target, Ref::Element(i) if m.elements[i].kind.is_gateway())) && gw.len() == 2);
+    // results follow reading order: start event before anything else that matches "order"
+    let r = search(&m, "order", &all);
+    assert_eq!(match r[0].target { Ref::Element(i) => m.elements[i].id.as_str(), _ => "" }, "StartEvent_1");
+    // empty / whitespace query matches nothing
+    assert!(search(&m, "   ", &all).is_empty());
+}
+
+#[test]
+fn successors_ignore_associations_and_message_flows() {
+    let m = fixture();
+    let gw = m.element_idx("Gateway_Amount").unwrap();
+    // Gateway_Amount has an association to the text annotation which must not count as a successor
+    assert_eq!(m.successors(gw).len(), 2);
+    assert_eq!(m.predecessors(gw).len(), 1);
+    assert!(m.elements[gw].outgoing.len() > 2, "raw outgoing still contains the association");
+}

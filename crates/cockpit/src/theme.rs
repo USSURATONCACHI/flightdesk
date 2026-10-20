@@ -248,24 +248,32 @@ pub mod system {
         // org.freedesktop.appearance color-scheme: 0 = no preference, 1 = prefer dark, 2 = prefer light
         let portal = run("gdbus", &["call", "--session", "--dest", "org.freedesktop.portal.Desktop", "--object-path", "/org/freedesktop/portal/desktop", "--method", "org.freedesktop.portal.Settings.ReadOne", "org.freedesktop.appearance", "color-scheme"])
             .or_else(|| run("busctl", &["--user", "call", "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", "org.freedesktop.portal.Settings", "ReadOne", "ss", "org.freedesktop.appearance", "color-scheme"]));
-        if let Some(out) = portal {
-            if let Some(d) = out.chars().rev().find(|c| c.is_ascii_digit()) {
-                return match d {
-                    '1' => Some(true),
-                    '2' => Some(false),
-                    _ => None,
-                };
-            }
+        if let Some(v) = portal.as_deref().and_then(parse_portal_color_scheme) {
+            return Some(v);
         }
-        if let Some(out) = run("gsettings", &["get", "org.gnome.desktop.interface", "color-scheme"]) {
-            if out.contains("prefer-dark") {
-                return Some(true);
-            }
-            if out.contains("prefer-light") || out.contains("default") {
-                return Some(false);
-            }
+        run("gsettings", &["get", "org.gnome.desktop.interface", "color-scheme"]).as_deref().and_then(parse_gsettings_color_scheme)
+    }
+
+    /// Parse the portal's `color-scheme` reply (`(<uint32 1>,)` from gdbus, `v u 1` from busctl):
+    /// 1 = prefer dark, 2 = prefer light, 0 = no preference.
+    pub fn parse_portal_color_scheme(out: &str) -> Option<bool> {
+        let digit = out.trim().chars().rev().find(|c| c.is_ascii_digit())?;
+        match digit {
+            '1' => Some(true),
+            '2' => Some(false),
+            _ => None,
         }
-        None
+    }
+
+    /// Parse `gsettings get org.gnome.desktop.interface color-scheme`.
+    pub fn parse_gsettings_color_scheme(out: &str) -> Option<bool> {
+        if out.contains("prefer-dark") {
+            Some(true)
+        } else if out.contains("prefer-light") || out.contains("default") {
+            Some(false)
+        } else {
+            None
+        }
     }
 
     #[cfg(not(target_os = "linux"))]

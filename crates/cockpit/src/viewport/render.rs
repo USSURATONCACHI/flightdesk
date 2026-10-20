@@ -90,12 +90,27 @@ pub struct Renderer<'a> {
     visible: Rect,
 }
 
-#[derive(Clone, Copy, PartialEq, PartialOrd)]
-enum Lod {
+/// Level of detail drawn at a zoom level (see DESIGN.md §5.5).
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub enum Lod {
     Full,
     Medium,
     Low,
     Blocks,
+}
+
+impl Lod {
+    pub fn for_zoom(z: f32) -> Self {
+        if z >= 0.6 {
+            Lod::Full
+        } else if z >= 0.3 {
+            Lod::Medium
+        } else if z >= 0.12 {
+            Lod::Low
+        } else {
+            Lod::Blocks
+        }
+    }
 }
 
 const BPMN_FONT: f32 = 12.0;
@@ -108,16 +123,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn lod(&self) -> Lod {
-        let z = self.zoom;
-        if z >= 0.6 {
-            Lod::Full
-        } else if z >= 0.3 {
-            Lod::Medium
-        } else if z >= 0.12 {
-            Lod::Low
-        } else {
-            Lod::Blocks
-        }
+        Lod::for_zoom(self.zoom)
     }
 
     #[inline]

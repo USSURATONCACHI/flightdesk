@@ -306,7 +306,7 @@ pub fn build_runtime(q: &Query, defs: &[camunda::ProcessDefinition]) -> ProcessI
                 r.process_definition_key = Some(k.to_string());
             }
         } else if t.value.contains('*') {
-            r.process_definition_key_in = Some(defs.iter().filter(|d| wildcard(&t.value, &d.key)).map(|d| d.key.clone()).collect());
+            r.process_definition_key_in = Some(matching_keys(defs, &t.value));
         } else {
             r.process_definition_key = Some(t.value.clone());
         }
@@ -368,7 +368,7 @@ pub fn build_history(q: &Query, defs: &[camunda::ProcessDefinition]) -> Historic
                 h.process_definition_key = Some(k.to_string());
             }
         } else if t.value.contains('*') {
-            h.process_definition_key_in = Some(defs.iter().filter(|d| wildcard(&t.value, &d.key)).map(|d| d.key.clone()).collect());
+            h.process_definition_key_in = Some(matching_keys(defs, &t.value));
         } else {
             h.process_definition_key = Some(t.value.clone());
         }
@@ -456,6 +456,14 @@ pub fn build_history(q: &Query, defs: &[camunda::ProcessDefinition]) -> Historic
         h.variable_names_ignore_case = Some(true);
     }
     h
+}
+
+/// Distinct definition keys matching a `*` pattern (the list usually holds every version).
+fn matching_keys(defs: &[camunda::ProcessDefinition], pattern: &str) -> Vec<String> {
+    let mut keys: Vec<String> = defs.iter().filter(|d| wildcard(pattern, &d.key)).map(|d| d.key.clone()).collect();
+    keys.sort();
+    keys.dedup();
+    keys
 }
 
 fn wildcard(pattern: &str, s: &str) -> bool {

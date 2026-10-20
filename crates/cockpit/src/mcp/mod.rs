@@ -173,7 +173,8 @@ fn rpc_ok(id: Value, result: Value) -> Value {
 
 pub const INSTRUCTIONS: &str = "Flightdeck is a desktop cockpit for a Camunda 7 engine. Tools starting with `ui_` drive the running UI (navigate, select elements, zoom, dock tabs, screenshots); the others read or change the engine (definitions, instances, variables, incidents, jobs, tasks, modification, batches). Start with `engine_status` and `ui_state`. Destructive tools require `confirm: true`. Instance search uses the query language: def:key bk:ABC* var.amount>1000 act:Task_x exec:Task_y state:finished started>-7d.";
 
-fn handle_message(m: &Value, queue: &Queue, ctx: &egui::Context, stats: &Arc<Mutex<McpStats>>) -> Option<Value> {
+/// Handle one JSON-RPC message; `None` for notifications (no response).
+pub fn handle_message(m: &Value, queue: &Queue, ctx: &egui::Context, stats: &Arc<Mutex<McpStats>>) -> Option<Value> {
     let id = m.get("id").cloned().unwrap_or(Value::Null);
     let method = m.get("method").and_then(|v| v.as_str()).unwrap_or("");
     let is_notification = m.get("id").is_none();
@@ -239,7 +240,7 @@ fn handle_message(m: &Value, queue: &Queue, ctx: &egui::Context, stats: &Arc<Mut
 }
 
 /// Convert a tool outcome into MCP `CallToolResult`. A `{"_png_base64": "...", ...}` value becomes image content.
-fn tool_result(r: ToolResult) -> Value {
+pub fn tool_result(r: ToolResult) -> Value {
     match r {
         Ok(v) => {
             if let Some(png) = v.get("_png_base64").and_then(|p| p.as_str()) {

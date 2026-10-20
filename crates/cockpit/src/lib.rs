@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod commands;
+pub mod history;
 pub mod inspector;
 pub mod mcp;
 pub mod net;

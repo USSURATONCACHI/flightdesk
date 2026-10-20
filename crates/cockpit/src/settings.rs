@@ -97,8 +97,16 @@ impl Settings {
         Some(d.config_dir().join("settings.toml"))
     }
     pub fn load() -> Self {
-        let Some(p) = Self::path() else { return Self::default() };
-        match std::fs::read_to_string(&p) {
+        match Self::path() {
+            Some(p) => Self::load_from(&p),
+            None => Self::default(),
+        }
+    }
+
+    /// Load from an explicit file; unreadable or missing files yield defaults, unknown keys are
+    /// ignored and the dock width is clamped to a sane range.
+    pub fn load_from(p: &std::path::Path) -> Self {
+        match std::fs::read_to_string(p) {
             Ok(s) => {
                 let mut st: Self = toml::from_str(&s).unwrap_or_else(|e| {
                     log::warn!("settings unreadable ({e}); using defaults");
@@ -111,7 +119,13 @@ impl Settings {
         }
     }
     pub fn save(&self) {
-        let Some(p) = Self::path() else { return };
+        if let Some(p) = Self::path() {
+            self.save_to(&p);
+        }
+    }
+
+    /// Save to an explicit file. Passwords are stripped unless `remember_password` is set.
+    pub fn save_to(&self, p: &std::path::Path) {
         let mut copy = self.clone();
         for e in &mut copy.engines {
             if !e.remember_password {
@@ -123,7 +137,7 @@ impl Settings {
         }
         match toml::to_string_pretty(&copy) {
             Ok(s) => {
-                if let Err(e) = std::fs::write(&p, s) {
+                if let Err(e) = std::fs::write(p, s) {
                     log::warn!("cannot save settings: {e}");
                 }
             }

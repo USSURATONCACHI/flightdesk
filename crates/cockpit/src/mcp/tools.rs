@@ -849,7 +849,8 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 Ok(Some(json!({
                     "connected": app.net.is_some(), "tabs": tabs, "place": place_json(app), "dock_visible": app.dock_visible,
                     "pending_confirmation": app.confirm.as_ref().map(|c| json!({"title": c.title, "body": c.body, "confirm_label": c.confirm_label})),
-                    "palette_open": app.palette.open, "help_open": app.help_open, "theme": if app.tokens.dark { "dark" } else { "light" }, "auto_refresh_paused": app.paused,
+                    "palette_open": app.palette.open, "help_open": app.help_open, "theme": if app.tokens.dark { "dark" } else { "light" }, "theme_mode": format!("{:?}", app.theme_mode()), "auto_refresh_paused": app.paused,
+                    "popup_open": app.ctx.as_ref().map(egui::Popup::is_any_open), "window_focused": app.window_focused, "frame": app.frame_number(),
                     "toasts": toasts, "window": app.ctx.as_ref().map(|c| { let r = c.content_rect(); json!({"width": r.width(), "height": r.height()}) }),
                 })))
             }

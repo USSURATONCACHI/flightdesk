@@ -141,3 +141,29 @@ mod tests {
         assert_eq!(s, "<a x=\"1\">\n  <b>t</b>\n  <c/>\n</a>");
     }
 }
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+
+    #[test]
+    fn timer_expressions_edge_cases() {
+        assert_eq!(humanize_timer("R/PT1H").as_deref(), Some("every 1 hour, forever"));
+        assert_eq!(humanize_timer("R2/2026-01-01T00:00:00Z/P1D").as_deref(), Some("every 1 day, 2 times, from 2026-01-01T00:00:00Z"));
+        assert_eq!(humanize_duration("P1.5D").as_deref(), Some("1.5 days"));
+        assert_eq!(humanize_duration("PT0S").as_deref(), Some("0 seconds"));
+        assert_eq!(humanize_duration("P"), None);
+        assert_eq!(humanize_duration("1h"), None, "non ISO strings are rejected rather than guessed");
+        assert_eq!(humanize_timer("#{timerExpr}"), None);
+        assert_eq!(humanize_timer("2026-01-01T10:00:00+03:00"), None, "a date is left to the caller to format");
+    }
+
+    #[test]
+    fn pretty_xml_keeps_text_and_handles_nesting() {
+        let out = pretty_xml(r#"<?xml version="1.0"?><a><b c="1"><d>text</d><e/></b></a>"#);
+        assert_eq!(out, "<?xml version=\"1.0\"?>\n<a>\n  <b c=\"1\">\n    <d>text</d>\n    <e/>\n  </b>\n</a>");
+        // an element whose text contains angle-bracket-free expressions survives intact
+        let out = pretty_xml("<x><cond>${a > 1}</cond></x>");
+        assert!(out.contains("${a > 1}"));
+    }
+}

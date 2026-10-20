@@ -171,6 +171,11 @@ impl App {
     }
 
     /// The theme mode in effect: a command-line override, else the saved setting.
+    /// Frames rendered so far (diagnostics for agents and tests).
+    pub fn frame_number(&self) -> u64 {
+        self.frame
+    }
+
     pub fn theme_mode(&self) -> ThemeMode {
         self.theme_override.unwrap_or(self.settings.theme)
     }

@@ -694,65 +694,12 @@ impl<'a> Parser<'a> {
         });
         m.draw_order = order;
 
-        // Reading order for flow nodes: walk the graph from start events (top-most first) along
-        // sequence flows, visiting boundary events right after their host; anything unreachable is
-        // appended in geometric order (lane, row, x). This is what Tab cycles through.
-        let geo_key = |m: &Model, i: ElementIdx| -> (i64, i64, i64) {
-            let e = &m.elements[i];
-            let mut cur = e.lane.or(e.parent);
-            let mut lane_y = i64::MIN;
-            while let Some(c) = cur {
-                let ce = &m.elements[c];
-                if matches!(ce.kind, ElementKind::Lane | ElementKind::Participant) && ce.bounds.is_valid() {
-                    lane_y = ce.bounds.y as i64;
-                    break;
-                }
-                cur = ce.parent;
-            }
-            let c = e.bounds.center();
-            (lane_y, (c.y / 40.0).round() as i64, c.x as i64)
-        };
-        let mut all: Vec<ElementIdx> = m.flow_nodes().filter(|(_, e)| e.bounds.is_valid()).map(|(i, _)| i).collect();
-        all.sort_by_key(|&i| geo_key(m, i));
-        let mut visited = vec![false; m.elements.len()];
-        let mut ro: Vec<ElementIdx> = Vec::with_capacity(all.len());
-        let mut roots: Vec<ElementIdx> = all.iter().copied().filter(|&i| m.elements[i].kind == ElementKind::StartEvent && m.elements[i].attached_to.is_none()).collect();
-        // Nodes without incoming flows are roots too (after real start events).
-        roots.extend(all.iter().copied().filter(|&i| m.elements[i].kind != ElementKind::StartEvent && m.elements[i].attached_to.is_none() && m.predecessors(i).is_empty()));
-        roots.extend(all.iter().copied());
-        for root in roots {
-            if visited[root] {
-                continue;
-            }
-            let mut stack = vec![root];
-            while let Some(i) = stack.pop() {
-                if visited[i] {
-                    continue;
-                }
-                visited[i] = true;
-                ro.push(i);
-                let mut next: Vec<ElementIdx> = vec![];
-                // children of a container first, then boundary events, then successors
-                if m.elements[i].kind.is_container() {
-                    let mut kids: Vec<ElementIdx> = all.iter().copied().filter(|&k| m.elements[k].parent == Some(i) && m.elements[k].attached_to.is_none()).collect();
-                    kids.sort_by_key(|&k| (m.elements[k].kind != ElementKind::StartEvent, geo_key(m, k)));
-                    next.extend(kids);
-                }
-                let mut be: Vec<ElementIdx> = m.elements[i].boundary_events.clone();
-                be.sort_by_key(|&k| geo_key(m, k));
-                next.extend(be);
-                let mut succ: Vec<ElementIdx> = m.successors(i).into_iter().map(|(_, t)| t).collect();
-                succ.sort_by_key(|&k| geo_key(m, k));
-                next.extend(succ);
-                // push in reverse so the first candidate is visited first (DFS keeps paths together)
-                for n in next.into_iter().rev() {
-                    if !visited[n] {
-                        stack.push(n);
-                    }
-                }
-            }
-        }
-        m.reading_order = ro;
+        // Reading order for flow nodes (what Tab cycles through): a topological order of the
+        // sequence-flow graph with geometric tie-breaking, so every branch of a gateway is visited
+        // before the join, loops do not block anything (back edges are ignored), children of an
+        // expanded subprocess follow their container and precede its successors, and boundary
+        // events follow their host. Undrawn nodes are left out.
+        m.reading_order = reading_order(m);
     }
 }
 
@@ -763,4 +710,139 @@ fn parse_bounds(b: &Node) -> Option<Rect> {
         w: attr(b, "width")?.parse().ok()?,
         h: attr(b, "height")?.parse().ok()?,
     })
+}
+
+/// See `Model::reading_order`.
+fn reading_order(m: &Model) -> Vec<ElementIdx> {
+    use std::collections::{HashMap, HashSet};
+    let drawable: Vec<ElementIdx> = m.flow_nodes().filter(|(_, e)| e.bounds.is_valid()).map(|(i, _)| i).collect();
+    let set: HashSet<ElementIdx> = drawable.iter().copied().collect();
+    let n = m.elements.len();
+    // Geometric key: lane/pool top, then 40-unit rows, then x.
+    let geo = |i: ElementIdx| -> (i64, i64, i64) {
+        let e = &m.elements[i];
+        let mut cur = e.lane.or(e.parent);
+        let mut lane_y = i64::MIN;
+        while let Some(c) = cur {
+            let ce = &m.elements[c];
+            if matches!(ce.kind, ElementKind::Lane | ElementKind::Participant) && ce.bounds.is_valid() {
+                lane_y = ce.bounds.y as i64;
+                break;
+            }
+            cur = ce.parent;
+        }
+        let c = e.bounds.center();
+        (lane_y, (c.y / 40.0).round() as i64, c.x as i64)
+    };
+    // Edges: real sequence flows plus structural pseudo-edges.
+    let mut edges: HashMap<ElementIdx, Vec<ElementIdx>> = HashMap::new();
+    let mut add = |a: ElementIdx, b: ElementIdx| {
+        if a != b && set.contains(&a) && set.contains(&b) {
+            edges.entry(a).or_default().push(b);
+        }
+    };
+    for &i in &drawable {
+        for (_, t) in m.successors(i) {
+            add(i, t);
+        }
+        for &b in &m.elements[i].boundary_events {
+            add(i, b);
+        }
+        if m.elements[i].kind.is_container() {
+            let children: Vec<ElementIdx> = drawable.iter().copied().filter(|&c| m.elements[c].parent == Some(i) && m.elements[c].attached_to.is_none()).collect();
+            let exits: Vec<ElementIdx> = m.successors(i).into_iter().map(|(_, t)| t).collect();
+            for &c in &children {
+                add(i, c);
+                if m.successors(c).is_empty() {
+                    for &x in &exits {
+                        add(c, x);
+                    }
+                }
+            }
+        }
+    }
+    for v in edges.values_mut() {
+        v.sort_by_key(|&t| geo(t));
+        v.dedup();
+    }
+    // Roots in priority order: start events, then nodes without incoming flows, then everything.
+    let mut roots: Vec<ElementIdx> = drawable.iter().copied().filter(|&i| m.elements[i].kind == ElementKind::StartEvent && m.elements[i].attached_to.is_none()).collect();
+    roots.sort_by_key(|&i| geo(i));
+    let mut others: Vec<ElementIdx> = drawable.iter().copied().filter(|&i| m.elements[i].attached_to.is_none() && m.predecessors(i).is_empty() && m.elements[i].kind != ElementKind::StartEvent).collect();
+    others.sort_by_key(|&i| geo(i));
+    roots.extend(others);
+    // Back edges (loops) found by DFS from the roots; they are dropped from the dependency count.
+    let mut colour = vec![0u8; n]; // 0 white, 1 grey, 2 black
+    let mut back: HashSet<(ElementIdx, ElementIdx)> = HashSet::new();
+    let mut all_sorted = drawable.clone();
+    all_sorted.sort_by_key(|&i| geo(i));
+    for &r in roots.iter().chain(all_sorted.iter()) {
+        if colour[r] != 0 {
+            continue;
+        }
+        let mut stack: Vec<(ElementIdx, usize)> = vec![(r, 0)];
+        colour[r] = 1;
+        while let Some(&mut (node, ref mut next)) = stack.last_mut() {
+            let succ = edges.get(&node).map(|v| v.as_slice()).unwrap_or(&[]);
+            if *next < succ.len() {
+                let t = succ[*next];
+                *next += 1;
+                match colour[t] {
+                    0 => {
+                        colour[t] = 1;
+                        stack.push((t, 0));
+                    }
+                    1 => {
+                        back.insert((node, t));
+                    }
+                    _ => {}
+                }
+            } else {
+                colour[node] = 2;
+                stack.pop();
+            }
+        }
+    }
+    // Kahn's algorithm with a geometric choice among the ready nodes.
+    let mut indeg: HashMap<ElementIdx, usize> = drawable.iter().map(|&i| (i, 0)).collect();
+    for (&a, ts) in &edges {
+        for &t in ts {
+            if !back.contains(&(a, t)) {
+                *indeg.get_mut(&t).unwrap() += 1;
+            }
+        }
+    }
+    let mut done = vec![false; n];
+    let mut out: Vec<ElementIdx> = Vec::with_capacity(drawable.len());
+    let mut ready: Vec<ElementIdx> = drawable.iter().copied().filter(|i| indeg[i] == 0).collect();
+    let root_rank: HashMap<ElementIdx, usize> = roots.iter().enumerate().map(|(k, &i)| (i, k)).collect();
+    while out.len() < drawable.len() {
+        if ready.is_empty() {
+            // Only cycles without an entry remain: break one at the geometric first node.
+            let mut rest: Vec<ElementIdx> = drawable.iter().copied().filter(|&i| !done[i]).collect();
+            rest.sort_by_key(|&i| geo(i));
+            ready.push(rest[0]);
+        }
+        // Prefer declared roots in their priority order, otherwise geometry.
+        let pick = *ready.iter().min_by_key(|&&i| (root_rank.get(&i).copied().unwrap_or(usize::MAX), geo(i))).unwrap();
+        ready.retain(|&i| i != pick);
+        if done[pick] {
+            continue;
+        }
+        done[pick] = true;
+        out.push(pick);
+        if let Some(ts) = edges.get(&pick) {
+            for &t in ts {
+                if back.contains(&(pick, t)) || done[t] {
+                    continue;
+                }
+                let d = indeg.get_mut(&t).unwrap();
+                *d = d.saturating_sub(1);
+                if *d == 0 && !ready.contains(&t) {
+                    ready.push(t);
+                }
+            }
+        }
+    }
+    out
 }

@@ -578,6 +578,39 @@ mod tests {
         assert_eq!(t[2].incident_ids, vec!["inc1"]);
     }
     #[test]
+    fn modification_instructions_serialise_and_describe() {
+        let i = ModificationInstruction::start_before("Task_A");
+        assert_eq!(serde_json::to_value(&i).unwrap(), serde_json::json!({"type": "startBeforeActivity", "activityId": "Task_A"}), "optional fields are omitted, not null");
+        assert_eq!(ModificationInstruction::cancel_activity("Task_A").describe(), "Cancel all tokens at Task_A");
+        assert_eq!(ModificationInstruction::cancel_instance("Task_A:30f87682-cc52-11f1-8f3a-c6104db61f7c").describe(), "Cancel token Task_A:30f87682");
+        // what an agent sends (camelCase JSON) deserialises back
+        let parsed: ModificationInstruction = serde_json::from_value(serde_json::json!({"type": "cancel", "activityId": "X", "variables": {"a": {"value": 1, "type": "Integer"}}})).unwrap();
+        assert_eq!(parsed.describe(), "Cancel all tokens at X");
+        assert!(parsed.variables.unwrap().contains_key("a"));
+    }
+
+    #[test]
+    fn historic_activity_helpers() {
+        let a = HistoricActivityInstance { activity_id: "Task_Reserve#multiInstanceBody".into(), ..Default::default() };
+        assert!(a.is_multi_instance_body());
+        assert_eq!(a.base_activity_id(), "Task_Reserve");
+        let stats = ActivityStatistics { incidents: vec![IncidentStatistics { incident_type: "failedJob".into(), incident_count: 2 }, IncidentStatistics { incident_type: "failedExternalTask".into(), incident_count: 1 }], ..Default::default() };
+        assert_eq!(stats.incident_count(), 3);
+        let inc = Incident { incident_timestamp: None, create_time: Some("t".into()), ..Default::default() };
+        assert_eq!(inc.time(), Some("t"), "history incidents expose createTime instead of incidentTimestamp");
+    }
+
+    #[test]
+    fn unknown_fields_from_newer_engines_are_tolerated() {
+        let pd: ProcessDefinition = serde_json::from_str(r#"{"id":"k:1:x","key":"k","version":1,"brandNewField":true}"#).unwrap();
+        assert_eq!(pd.display_name(), "k");
+        let named = ProcessDefinition { name: Some("Nice".into()), ..pd.clone() };
+        assert_eq!(named.display_name(), "Nice");
+        let empty_name = ProcessDefinition { name: Some(String::new()), ..pd };
+        assert_eq!(empty_name.display_name(), "k", "empty names fall back to the key");
+    }
+
+    #[test]
     fn short_ids() {
         assert_eq!(short_id("Task_Approve:30f87682-cc52-11f1-8f3a-c6104db61f7c"), "Task_Approve:30f87682");
         assert_eq!(short_id("30f87682-cc52-11f1-8f3a-c6104db61f7c"), "30f87682");

@@ -526,6 +526,43 @@ mod tests {
         assert_eq!(normalize_base_url("http://host/camunda/engine-rest"), "http://host/camunda/engine-rest");
     }
     #[test]
+    fn engine_errors_are_decoded_into_status_errors() {
+        let e = status_error(StatusCode::NOT_FOUND, br#"{"type":"InvalidRequestException","message":"Process instance with id x does not exist"}"#);
+        assert_eq!(e.status(), Some(404));
+        assert!(e.is_not_found());
+        assert_eq!(e.short(), "HTTP 404: Process instance with id x does not exist");
+        // a non-JSON body (proxy error page) still produces a readable message
+        let e = status_error(StatusCode::BAD_GATEWAY, b"<html>upstream down</html>");
+        assert!(matches!(&e, ApiError::Status { kind, message, .. } if kind == "HttpError" && message.contains("upstream")));
+        // an empty body falls back to the HTTP reason phrase
+        let e = status_error(StatusCode::UNAUTHORIZED, b"");
+        assert!(e.is_unauthorized());
+        assert!(e.to_string().contains("Unauthorized"));
+        // very long first lines are cut so toasts stay readable
+        let long = format!("{{\"type\":\"E\",\"message\":\"{}\"}}", "x".repeat(500));
+        assert!(status_error(StatusCode::INTERNAL_SERVER_ERROR, long.as_bytes()).short().len() < 230);
+    }
+
+    #[test]
+    fn variable_values_serialise_in_the_rest_api_shape() {
+        let v = VariableValue::new("Long", serde_json::json!(5));
+        assert_eq!(serde_json::to_value(&v).unwrap(), serde_json::json!({"type": "Long", "value": 5, "valueInfo": {}}));
+        let s = VariableValue::string("a");
+        assert_eq!(serde_json::to_value(&s).unwrap()["type"], "String");
+        // what the engine returns round-trips through VariableInstance::as_value unchanged
+        let inst: VariableInstance = serde_json::from_str(r#"{"type":"Json","value":"{\"a\":1}","valueInfo":{},"id":"i","name":"n"}"#).unwrap();
+        assert_eq!(inst.as_value().value, serde_json::json!("{\"a\":1}"));
+        assert_eq!(inst.as_value().type_.as_deref(), Some("Json"));
+    }
+
+    #[test]
+    fn url_encoding_of_variable_names() {
+        assert_eq!(enc("plain_name-1.x~"), "plain_name-1.x~");
+        assert_eq!(enc("spaces and/slashes?"), "spaces%20and%2Fslashes%3F");
+        assert_eq!(enc("юникод"), "%D1%8E%D0%BD%D0%B8%D0%BA%D0%BE%D0%B4");
+    }
+
+    #[test]
     fn query_serialisation_skips_none() {
         let q = ProcessInstanceQuery { business_key_like: Some("%A%".into()), ..Default::default() };
         assert_eq!(serde_json::to_string(&q).unwrap(), r#"{"businessKeyLike":"%A%"}"#);

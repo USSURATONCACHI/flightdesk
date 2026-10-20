@@ -68,8 +68,31 @@ fn parse_args() -> Args {
     a
 }
 
+/// Write panics to `<config dir>/crash.log` as well as stderr, so a crash in a windowed session
+/// still leaves a backtrace behind.
+fn install_crash_log() {
+    let path = directories::ProjectDirs::from("", "", "flightdeck").map(|d| d.config_dir().join("crash.log"));
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let bt = std::backtrace::Backtrace::force_capture();
+        let text = format!("[{}] {info}\n{bt}\n\n", chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
+        if let Some(p) = &path {
+            if let Some(dir) = p.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(p) {
+                let _ = f.write_all(text.as_bytes());
+            }
+            eprintln!("flightdeck: panic written to {}", p.display());
+        }
+        default_hook(info);
+    }));
+}
+
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu=warn,naga=warn,eframe=warn,egui_wgpu=warn")).init();
+    install_crash_log();
     let args = parse_args();
     if let Some(url) = &args.mcp_stdio {
         // stdio ↔ HTTP bridge for MCP clients that only speak stdio.
