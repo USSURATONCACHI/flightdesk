@@ -90,6 +90,8 @@ pub struct DiagramView {
     pub focused: bool,
     want_focus: bool,
     badges: Vec<BadgeHit>,
+    /// Zoom-independent label layout cache.
+    pub text: super::text::TextCache,
     /// Set by Shift+F; the owning place fits the camera to its tokens and clears it.
     pub fit_tokens_marker: bool,
     id: Id,
@@ -119,6 +121,7 @@ impl DiagramView {
             focused: false,
             want_focus: true,
             badges: vec![],
+            text: Default::default(),
             fit_tokens_marker: false,
             id,
         }
@@ -464,7 +467,7 @@ fn show_impl(
         overlays.dim_unmatched = false;
     }
     let painter = ui.painter().with_clip_rect(rect);
-    let mut renderer = Renderer::new(model, &view.camera, rect, &painter, style, overlays);
+    let mut renderer = Renderer::new(model, &view.camera, rect, &painter, style, overlays, &mut view.text);
     renderer.paint();
     view.badges = std::mem::take(&mut renderer.badges);
 

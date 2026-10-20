@@ -2,8 +2,9 @@
 
 use super::camera::Camera;
 use super::icons;
+use super::text::TextCache;
 use bpmn::{Element, ElementKind, EventDef, Flow, FlowKind, Model, Ref};
-use egui::epaint::{PathShape, PathStroke, TextShape};
+use egui::epaint::{PathShape, PathStroke};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2};
 use std::collections::{HashMap, HashSet};
 
@@ -86,6 +87,7 @@ pub struct Renderer<'a> {
     pub style: &'a DiagramStyle,
     pub overlays: &'a Overlays,
     pub badges: Vec<BadgeHit>,
+    text: &'a mut TextCache,
     zoom: f32,
     visible: Rect,
 }
@@ -116,10 +118,10 @@ impl Lod {
 const BPMN_FONT: f32 = 12.0;
 
 impl<'a> Renderer<'a> {
-    pub fn new(model: &'a Model, camera: &'a Camera, viewport: Rect, painter: &'a Painter, style: &'a DiagramStyle, overlays: &'a Overlays) -> Self {
+    pub fn new(model: &'a Model, camera: &'a Camera, viewport: Rect, painter: &'a Painter, style: &'a DiagramStyle, overlays: &'a Overlays, text: &'a mut TextCache) -> Self {
         let zoom = camera.zoom();
         let visible = camera.visible_world_rect(viewport).expand(60.0 / zoom.max(0.01));
-        Self { model, camera, viewport, painter, style, overlays, badges: vec![], zoom, visible }
+        Self { model, camera, viewport, painter, style, overlays, badges: vec![], text, zoom, visible }
     }
 
     fn lod(&self) -> Lod {
@@ -232,6 +234,7 @@ impl<'a> Renderer<'a> {
                 self.paint_highlights(i, e);
             }
         }
+        self.text.flush(self.painter);
         for &i in m.draw_order.iter() {
             let e = &m.elements[i];
             if self.visible_world(&e.bounds) && e.kind.is_flow_node() {
@@ -735,72 +738,63 @@ impl<'a> Renderer<'a> {
         self.painter.add(PathShape::convex_polygon(poly, self.style.canvas, PathStroke::from(stroke)));
     }
 
-    /// Wrapped label centred in `rect`, shrinking the font when it does not fit.
-    fn label_in_rect(&self, text: &str, rect: Rect, color: Color32, align: Align2) {
-        if rect.width() < 4.0 || rect.height() < 4.0 {
+    /// Wrapped label inside `rect` (screen), shrinking the font when the block is taller than the box.
+    /// Line breaks are zoom-independent (see `text.rs`).
+    fn label_in_rect(&mut self, text: &str, rect: Rect, color: Color32, align: Align2) {
+        if rect.width() < 4.0 || rect.height() < 4.0 || self.px(BPMN_FONT) < 3.5 {
             return;
         }
-        let mut size = quantize(self.px(BPMN_FONT));
-        if size < 3.5 {
-            return;
-        }
-        let min_size = (size * 0.6).max(3.5);
         let text = text.trim();
-        loop {
-            let galley = self.painter.layout(text.to_string(), FontId::proportional(size), color, rect.width());
-            if galley.size().y <= rect.height() + 0.5 || size <= min_size {
-                // Truncate rows that do not fit.
-                let pos = align.align_size_within_rect(galley.size(), rect).min;
-                let clip = rect.expand(1.0);
-                let p = self.painter.with_clip_rect(clip.intersect(self.painter.clip_rect()));
-                p.galley(pos, galley, color);
-                return;
-            }
-            size = (size - 1.0).max(min_size);
+        if text.is_empty() {
+            return;
         }
+        let max_h = rect.height() / self.zoom;
+        self.text.label(self.painter, text, rect, self.zoom, align, color, max_h, rect.expand(1.0));
     }
 
     /// Label outside the shape (events, gateways): DI label bounds or below the element.
-    fn external_label(&self, e: &Element, r: Rect, color: Color32) {
+    fn external_label(&mut self, e: &Element, r: Rect, color: Color32) {
         let Some(name) = e.name.as_deref().filter(|n| !n.trim().is_empty()) else { return };
+        let name = name.to_string();
         if let Some(lb) = e.label_bounds {
             let lr = self.wr(lb);
             // DI label bounds are often too tight; allow growth around the centre.
             let lr = Rect::from_center_size(lr.center(), Vec2::new(lr.width().max(self.px(90.0)), lr.height().max(self.px(14.0))));
-            self.label_free(name, lr, color, Align2::CENTER_TOP);
+            self.label_free(&name, lr, color, Align2::CENTER_TOP);
         } else {
             let lr = Rect::from_center_size(Pos2::new(r.center().x, r.max.y + self.px(12.0)), Vec2::new(self.px(100.0), self.px(28.0)));
-            self.label_free(name, lr, color, Align2::CENTER_TOP);
+            self.label_free(&name, lr, color, Align2::CENTER_TOP);
         }
     }
 
-    fn label_free(&self, text: &str, rect: Rect, color: Color32, align: Align2) {
-        let size = quantize(self.px(BPMN_FONT));
-        if size < 3.5 {
+    /// Free-standing label: wraps at the box width but may grow taller than it.
+    fn label_free(&mut self, text: &str, rect: Rect, color: Color32, align: Align2) {
+        if self.px(BPMN_FONT) < 3.5 {
             return;
         }
-        let galley = self.painter.layout(text.trim().to_string(), FontId::proportional(size), color, rect.width().max(self.px(60.0)));
-        let pos = align.align_size_within_rect(galley.size(), rect).min;
-        self.painter.galley(pos, galley, color);
+        let rect = Rect::from_min_size(rect.min, Vec2::new(rect.width().max(self.px(60.0)), rect.height()));
+        self.text.label(self.painter, text.trim(), rect, self.zoom, align, color, f32::INFINITY, self.viewport);
     }
 
-    fn rotated_label(&self, text: &str, strip: Rect, color: Color32, bold: bool) {
-        let size = quantize(self.px(BPMN_FONT) * if bold { 1.1 } else { 1.0 });
-        if size < 3.5 {
+    /// Vertical lane / pool name in the header strip, reading bottom to top.
+    fn rotated_label(&mut self, text: &str, strip: Rect, color: Color32, bold: bool) {
+        let font_scale = if bold { 1.1 } else { 1.0 };
+        if self.px(BPMN_FONT) * font_scale < 3.5 {
             return;
         }
-        let galley = self.painter.layout(text.trim().to_string(), FontId::proportional(size), color, strip.height() - self.px(10.0));
-        let gsize = galley.size();
-        // Rotate -90°: text runs bottom→top; anchor is the galley's top-left after rotation.
+        let text = text.trim();
+        let size = self.text.measure(self.painter, text, self.zoom, font_scale);
+        if size.x > strip.height() - self.px(10.0) {
+            // too long for the strip: fall back to a horizontal truncated label at the top
+            let r = Rect::from_min_size(strip.min, Vec2::new(strip.width(), self.px(16.0)));
+            self.label_in_rect(text, r, color, Align2::CENTER_TOP);
+            return;
+        }
+        // Rotate −90° about the strip centre: the galley's top-left lands at (cx - h/2, cy + w/2).
         let center = strip.center();
-        let pos = Pos2::new(center.x - gsize.y / 2.0, center.y + gsize.x / 2.0);
-        let shape = TextShape::new(pos, galley, color).with_angle(-std::f32::consts::FRAC_PI_2);
-        self.painter.add(shape);
+        let pos = Pos2::new(center.x - size.y / 2.0, center.y + size.x / 2.0);
+        self.text.label_rotated(self.painter, text, self.zoom, font_scale, color, pos, -std::f32::consts::FRAC_PI_2, pos, strip.expand(2.0));
     }
-}
-
-fn quantize(px: f32) -> f32 {
-    (px * 2.0).round() / 2.0
 }
 
 pub fn blend(a: Color32, b: Color32, t: f32) -> Color32 {

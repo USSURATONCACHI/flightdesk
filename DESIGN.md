@@ -241,7 +241,11 @@ the fallback if profiling demands).
 | 0.12–0.3 | Shapes and badges, no text, icons only for events |
 | < 0.12 | Filled rectangles/circles per element type, lanes outlines; badges only |
 
-Text uses egui galleys cached per (element, zoom bucket) so panning never re-lays out.
+Text is laid out in *world* units: line breaks are computed once per label (at a 4× reference
+size, shrinking down to 60 % when the block is taller than its box) and never depend on the zoom.
+Each line is then laid out at one of a few cached band sizes (quarter-octave steps) and drawn as a
+glyph mesh scaled geometrically to the exact zoom, so words never re-wrap and glyphs never snap to
+pixel sizes while zooming (`viewport/text.rs`).
 Badges (running count, incident count) are always drawn at a constant *screen* size with a
 minimum hit area of 20 px so they stay clickable at any zoom.
 
