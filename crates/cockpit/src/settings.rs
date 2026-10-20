@@ -2,6 +2,7 @@
 
 use crate::theme::ThemeMode;
 use serde::{Deserialize, Serialize};
+use serde::de::Deserialize as _;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -105,28 +106,77 @@ impl Settings {
         }
     }
 
-    /// Load from an explicit file; unreadable or missing files yield defaults, unknown keys are
-    /// ignored and the dock width is clamped to a sane range.
+    /// Load from an explicit file. Missing files yield defaults. Everything the file does contain
+    /// is kept field by field: a value that no longer deserialises (a renamed enum variant, a
+    /// type change between versions, one malformed connection) only resets *that* value, never
+    /// the whole file. A file that is not valid TOML at all is set aside as `*.broken-<time>` so
+    /// nothing is overwritten silently.
     pub fn load_from(p: &std::path::Path) -> Self {
-        match std::fs::read_to_string(p) {
-            Ok(s) => {
-                let mut st: Self = toml::from_str(&s).unwrap_or_else(|e| {
-                    log::warn!("settings unreadable ({e}); using defaults");
-                    Self::default()
-                });
-                st.dock_width = st.dock_width.clamp(280.0, 600.0);
-                st
+        let Ok(text) = std::fs::read_to_string(p) else { return Self::default() };
+        match Self::from_toml_lenient(&text) {
+            Ok((mut settings, warnings)) => {
+                for w in warnings {
+                    log::warn!("settings: {w}");
+                }
+                settings.dock_width = settings.dock_width.clamp(280.0, 600.0);
+                settings
             }
-            Err(_) => Self::default(),
+            Err(e) => {
+                let backup = p.with_extension(format!("toml.broken-{}", chrono::Local::now().format("%Y%m%d-%H%M%S")));
+                log::warn!("settings file is not valid TOML ({e}); keeping a copy at {}", backup.display());
+                let _ = std::fs::copy(p, &backup);
+                Self::default()
+            }
         }
     }
+
+    /// Parse TOML keeping every value that still fits the current schema. Returns the settings
+    /// and a warning per value that had to be dropped. Errors only when the text is not TOML.
+    pub fn from_toml_lenient(text: &str) -> Result<(Self, Vec<String>), toml::de::Error> {
+        let file: toml::Table = toml::from_str(text)?;
+        let mut warnings = vec![];
+        let mut base = toml::Table::try_from(Self::default()).expect("defaults serialise");
+        let accepts = |t: &toml::Table| Self::deserialize(t.clone()).is_ok();
+        for (key, value) in file {
+            // Arrays of tables (engines, saved searches) are filtered element by element.
+            if let toml::Value::Array(items) = &value {
+                let mut kept = vec![];
+                for (i, item) in items.iter().enumerate() {
+                    let mut candidate = base.clone();
+                    candidate.insert(key.clone(), toml::Value::Array(vec![item.clone()]));
+                    if accepts(&candidate) {
+                        kept.push(item.clone());
+                    } else {
+                        warnings.push(format!("ignoring {key}[{i}]: it does not match the current format"));
+                    }
+                }
+                let mut candidate = base.clone();
+                candidate.insert(key.clone(), toml::Value::Array(kept));
+                if accepts(&candidate) {
+                    base = candidate;
+                }
+                continue;
+            }
+            let mut candidate = base.clone();
+            candidate.insert(key.clone(), value);
+            if accepts(&candidate) {
+                base = candidate;
+            } else {
+                warnings.push(format!("ignoring `{key}`: its value is not valid for this version, using the default"));
+            }
+        }
+        let settings = Self::deserialize(base).expect("merged table was validated field by field");
+        Ok((settings, warnings))
+    }
+
     pub fn save(&self) {
         if let Some(p) = Self::path() {
             self.save_to(&p);
         }
     }
 
-    /// Save to an explicit file. Passwords are stripped unless `remember_password` is set.
+    /// Save atomically (write a temp file, then rename). Passwords are stripped unless
+    /// `remember_password` is set.
     pub fn save_to(&self, p: &std::path::Path) {
         let mut copy = self.clone();
         for e in &mut copy.engines {
@@ -139,13 +189,15 @@ impl Settings {
         }
         match toml::to_string_pretty(&copy) {
             Ok(s) => {
-                if let Err(e) = std::fs::write(p, s) {
+                let tmp = p.with_extension("toml.tmp");
+                if let Err(e) = std::fs::write(&tmp, s).and_then(|_| std::fs::rename(&tmp, p)) {
                     log::warn!("cannot save settings: {e}");
                 }
             }
             Err(e) => log::warn!("cannot serialise settings: {e}"),
         }
     }
+
     pub fn engine(&self) -> &EngineProfile {
         &self.engines[self.last_engine.min(self.engines.len().saturating_sub(1))]
     }

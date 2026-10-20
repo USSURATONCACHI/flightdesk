@@ -203,3 +203,61 @@ fn desktop_theme_probes_are_parsed_defensively() {
     assert_eq!(parse_gsettings_color_scheme("'default'"), Some(false));
     assert_eq!(parse_gsettings_color_scheme(""), None);
 }
+
+#[test]
+fn settings_survive_schema_changes_without_losing_connections() {
+    let dir = std::env::temp_dir().join(format!("flightdeck-lenient-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("settings.toml");
+    // A file written by another version: an enum variant that no longer exists, a field with the
+    // wrong type, an unknown key, and one connection entry that is malformed.
+    std::fs::write(
+        &path,
+        r#"
+theme = "Dark"
+pointer_wrap = "Lock"
+page_size = "lots"
+some_future_knob = { a = 1 }
+refresh_list_secs = 42
+
+[[engines]]
+name = "prod"
+url = "https://prod/engine-rest"
+user = "ops"
+
+[[engines]]
+name = 17
+url = ["not", "a", "string"]
+
+[[engines]]
+name = "staging"
+url = "https://staging/engine-rest"
+
+[[saved_searches]]
+name = "late"
+query = "state:finished finished<-1d"
+"#,
+    )
+    .unwrap();
+    let s = Settings::load_from(&path);
+    assert_eq!(s.theme, ThemeMode::Dark, "valid values are kept");
+    assert_eq!(s.refresh_list_secs, 42);
+    assert_eq!(s.page_size, Settings::default().page_size, "only the bad value falls back");
+    assert_eq!(s.pointer_wrap, Default::default());
+    let names: Vec<&str> = s.engines.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, vec!["prod", "staging"], "the malformed connection is dropped, the others stay");
+    assert_eq!(s.engines[0].user, "ops");
+    assert_eq!(s.saved_searches.len(), 1);
+    // saving and loading again is stable and keeps the connections
+    s.save_to(&path);
+    let again = Settings::load_from(&path);
+    assert_eq!(again.engines, s.engines);
+    assert!(!dir.join("settings.toml.tmp").exists(), "atomic save leaves no temp file behind");
+    // a file that is not TOML at all is backed up, not overwritten
+    std::fs::write(&path, "[[engines]\nname = \"half\"").unwrap();
+    let s = Settings::load_from(&path);
+    assert_eq!(s, Settings::default());
+    let backups: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains("broken")).collect();
+    assert_eq!(backups.len(), 1, "the unreadable file was preserved");
+    let _ = std::fs::remove_dir_all(&dir);
+}
