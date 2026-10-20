@@ -1105,6 +1105,17 @@ fn find_explanation(ui: &mut Ui, view: &DiagramView, model: &Model, style: &Diag
             };
             ui.label(egui::RichText::new(format!("    {what}")).monospace().size(11.0));
         }
+        if let Ref::Element(i) = h {
+            match model.elements[i].kind {
+                bpmn::ElementKind::ParallelGateway | bpmn::ElementKind::InclusiveGateway => {
+                    ui.label(egui::RichText::new("A token of this instance is parked at this join, waiting for the other branch(es) to arrive.").weak().size(11.0));
+                }
+                bpmn::ElementKind::EventBasedGateway => {
+                    ui.label(egui::RichText::new("The instance is waiting here for one of the following events.").weak().size(11.0));
+                }
+                _ => {}
+            }
+        }
         if hits.len() > 4 {
             ui.label(egui::RichText::new(format!("    … and {} more", hits.len() - 4)).weak().size(11.0));
         }

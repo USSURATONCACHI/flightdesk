@@ -75,6 +75,12 @@ Other flags: `--open def:<key> | instance:<id> | search:<query> | definitions | 
 Unlimited drags move the real cursor: through winit on X11, Windows and macOS, and through the
 `wp_pointer_warp_v1` protocol on Wayland (KWin 6.4+). Compositors without it keep ordinary drags.
 
+Directories: `--config-dir`/`--data-dir` or `FLIGHTDECK_CONFIG_DIR`/`FLIGHTDECK_DATA_DIR`
+(settings and crash log; persisted UI state). Give both or neither: a partial pair is refused
+at start-up. Without them the platform defaults are used (`~/.config/flightdeck` and
+`~/.local/share/flightdeck` on Linux). Development runs (`scripts/shot.sh`) always use a
+scratch pair so they never touch your real configuration.
+
 Environment: `FLIGHTDECK_NO_FOCUS=1` opens the window without taking focus;
 `FLIGHTDECK_WINDOW_POS=x,y` sets the initial position (not on Wayland — `scripts/shot.sh`
 uses Xwayland to place test windows on the second monitor).

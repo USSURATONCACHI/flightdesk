@@ -1,6 +1,6 @@
 //! Flightdeck: a fast, keyboard-first cockpit for Camunda 7.
 
-use cockpit::{app, mcp, settings, state, theme};
+use cockpit::{app, mcp, paths, settings, state, theme};
 
 use std::path::PathBuf;
 
@@ -20,6 +20,8 @@ struct Args {
     dock: Option<usize>,
     stats: bool,
     no_focus: bool,
+    config_dir: Option<PathBuf>,
+    data_dir: Option<PathBuf>,
     mcp: bool,
     mcp_port: Option<u16>,
     mcp_stdio: Option<String>,
@@ -43,6 +45,8 @@ fn parse_args() -> Args {
             "--dock" => a.dock = it.next().and_then(|v| v.parse().ok()),
             "--stats" => a.stats = true,
             "--no-focus" => a.no_focus = true,
+            "--config-dir" => a.config_dir = it.next().map(|v| paths::expand_tilde(&v)),
+            "--data-dir" => a.data_dir = it.next().map(|v| paths::expand_tilde(&v)),
             "--mcp" => a.mcp = true,
             "--mcp-port" => a.mcp_port = it.next().and_then(|v| v.parse().ok()),
             "--mcp-stdio" => a.mcp_stdio = Some(it.next().unwrap_or_else(|| "http://127.0.0.1:7788/mcp".into())),
@@ -53,7 +57,7 @@ fn parse_args() -> Args {
                 })
             }
             "-h" | "--help" => {
-                println!("flightdeck [--mcp] [--mcp-port N] [--mcp-stdio URL] [--no-focus] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
+                println!("flightdeck [--config-dir DIR --data-dir DIR] [--mcp] [--mcp-port N] [--mcp-stdio URL] [--no-focus] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
                 std::process::exit(0);
             }
             other => {
@@ -70,8 +74,7 @@ fn parse_args() -> Args {
 
 /// Write panics to `<config dir>/crash.log` as well as stderr, so a crash in a windowed session
 /// still leaves a backtrace behind.
-fn install_crash_log() {
-    let path = directories::ProjectDirs::from("", "", "flightdeck").map(|d| d.config_dir().join("crash.log"));
+fn install_crash_log(path: Option<PathBuf>) {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let bt = std::backtrace::Backtrace::force_capture();
@@ -92,14 +95,24 @@ fn install_crash_log() {
 
 fn main() -> eframe::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu=warn,naga=warn,eframe=warn,egui_wgpu=warn")).init();
-    install_crash_log();
     let args = parse_args();
+    // Directories: --config-dir/--data-dir, else FLIGHTDECK_CONFIG_DIR/FLIGHTDECK_DATA_DIR, else
+    // the platform defaults. A partial pair is refused (see `paths::resolve`).
+    let env_dir = |k: &str| std::env::var(k).ok().filter(|v| !v.trim().is_empty()).map(|v| paths::expand_tilde(&v));
+    let dirs = match paths::resolve(args.config_dir.clone().or_else(|| env_dir(paths::ENV_CONFIG_DIR)), args.data_dir.clone().or_else(|| env_dir(paths::ENV_DATA_DIR)), paths::platform_defaults) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("flightdeck: {e}");
+            std::process::exit(2);
+        }
+    };
+    install_crash_log(Some(dirs.crash_log()));
     if let Some(url) = &args.mcp_stdio {
         // stdio ↔ HTTP bridge for MCP clients that only speak stdio.
         mcp::stdio_bridge(url);
         return Ok(());
     }
-    let settings = settings::Settings::load();
+    let settings = settings::Settings::load_from(&dirs.settings_file());
     // `--theme` applies to this run only; it is never written to the settings file.
     let theme_override = args.theme.as_deref().map(|t| match t {
         "light" => theme::ThemeMode::Light,
@@ -121,14 +134,14 @@ fn main() -> eframe::Result<()> {
             viewport = viewport.with_position([x, y]);
         }
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    let options = eframe::NativeOptions { viewport, persistence_path: Some(dirs.data.join("app.ron")), ..Default::default() };
     eframe::run_native(
         "Flightdeck",
         options,
         Box::new(move |cc| {
             cockpit::platform::init(cc, cc);
             let mut app = app::App::new(&cc.egui_ctx, settings, args.scale);
-            app.settings_path = settings::Settings::path();
+            app.settings_path = Some(dirs.settings_file());
             if theme_override.is_some() {
                 app.theme_override = theme_override;
                 app.frame_theme_dirty = true;
@@ -142,7 +155,9 @@ fn main() -> eframe::Result<()> {
                 app.navigate(state::Nav::File { path: b.clone() }, state::NavMode::NewTab);
             }
             if let Some(url) = &args.url {
-                let mut p = settings::EngineProfile { name: "cli".into(), url: camunda::normalize_base_url(url), user: args.user.clone().unwrap_or_default(), password: args.password.clone().unwrap_or_default(), ..Default::default() };
+                let normalized = camunda::normalize_base_url(url);
+                let host = normalized.trim_start_matches("http://").trim_start_matches("https://").split('/').next().unwrap_or("engine").to_string();
+                let mut p = settings::EngineProfile { name: host, url: normalized, user: args.user.clone().unwrap_or_default(), password: args.password.clone().unwrap_or_default(), ..Default::default() };
                 if let Some(existing) = app.settings.engines.iter().find(|e| e.url == p.url) {
                     p.name = existing.name.clone();
                 }

@@ -7,6 +7,7 @@ pub mod history;
 pub mod inspector;
 pub mod mcp;
 pub mod net;
+pub mod paths;
 pub mod places;
 pub mod platform;
 pub mod query;

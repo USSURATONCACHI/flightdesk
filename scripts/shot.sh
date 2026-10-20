@@ -11,4 +11,9 @@ if [ -z "$GEOM" ]; then GEOM=$(xrandr --query 2>/dev/null | grep -oE '[0-9]+x[0-
 MW=${GEOM%%x*}; REST=${GEOM#*x}; MH=${REST%%+*}; REST=${REST#*+}; MX=${REST%%+*}; MY=${REST#*+}
 X=$((MX + MW - W)); Y=$MY
 BIN=${FLIGHTDECK_BIN:-./target/debug/cockpit}
+# Never touch the developer's real configuration: test runs get their own config/data dirs.
+TESTROOT=${FLIGHTDECK_TEST_ROOT:-${TMPDIR:-/tmp}/flightdeck-dev}
+export FLIGHTDECK_CONFIG_DIR=${FLIGHTDECK_CONFIG_DIR:-$TESTROOT/config}
+export FLIGHTDECK_DATA_DIR=${FLIGHTDECK_DATA_DIR:-$TESTROOT/data}
+mkdir -p "$FLIGHTDECK_CONFIG_DIR" "$FLIGHTDECK_DATA_DIR" && chmod 700 "$FLIGHTDECK_CONFIG_DIR" "$FLIGHTDECK_DATA_DIR"
 env -u WAYLAND_DISPLAY FLIGHTDECK_NO_FOCUS=1 FLIGHTDECK_WINDOW_POS="$X,$Y" timeout "${SHOT_TIMEOUT:-120}" "$BIN" --size "${W}x${H}" --screenshot "$OUT" --screenshot-after "${SHOT_AFTER:-150}" --exit-after-screenshot "$@" 2>&1 | grep -E "ERROR|WARN|panick|frames:" || true

@@ -101,18 +101,6 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// The per-user settings file (`<config dir>/flightdeck/settings.toml`).
-    pub fn path() -> Option<std::path::PathBuf> {
-        let d = directories::ProjectDirs::from("", "", "flightdeck")?;
-        Some(d.config_dir().join("settings.toml"))
-    }
-    pub fn load() -> Self {
-        match Self::path() {
-            Some(p) => Self::load_from(&p),
-            None => Self::default(),
-        }
-    }
-
     /// Load from an explicit file. Missing files yield defaults. Everything the file does contain
     /// is kept field by field: a value that no longer deserialises (a renamed enum variant, a
     /// type change between versions, one malformed connection) only resets *that* value, never
@@ -174,12 +162,6 @@ impl Settings {
         }
         let settings = Self::deserialize(base).expect("merged table was validated field by field");
         Ok((settings, warnings))
-    }
-
-    pub fn save(&self) {
-        if let Some(p) = Self::path() {
-            self.save_to(&p);
-        }
     }
 
     /// Save atomically (write a temp file, then rename). Passwords are stripped unless

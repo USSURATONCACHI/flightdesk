@@ -237,9 +237,10 @@ impl SettingsPlace {
                 section(ui, "s-about", "About", false, |ui| {
                     ui.label("Flightdeck — a fast, keyboard-first cockpit for Camunda 7.");
                     ui.label(RichText::new(format!("version {} · egui {}", env!("CARGO_PKG_VERSION"), "0.37")).weak().small());
-                    if let Some(p) = directories::ProjectDirs::from("", "", "flightdeck") {
-                        ui.label(RichText::new(format!("settings: {}", p.config_dir().join("settings.toml").display())).weak().small());
-                    }
+                    match &app.settings_path {
+                        Some(p) => ui.label(RichText::new(format!("settings: {}", p.display())).weak().small()),
+                        None => ui.label(RichText::new("settings are not persisted in this session").weak().small()),
+                    };
                 });
                 if dirty {
                     app.settings_dirty = true;
