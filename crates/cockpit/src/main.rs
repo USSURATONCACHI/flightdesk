@@ -134,6 +134,10 @@ fn main() -> eframe::Result<()> {
             viewport = viewport.with_position([x, y]);
         }
     }
+    // eframe does not create the parent of a custom persistence path.
+    if let Err(e) = std::fs::create_dir_all(&dirs.data) {
+        log::warn!("cannot create data dir {}: {e}", dirs.data.display());
+    }
     let options = eframe::NativeOptions { viewport, persistence_path: Some(dirs.data.join("app.ron")), ..Default::default() };
     eframe::run_native(
         "Flightdeck",
