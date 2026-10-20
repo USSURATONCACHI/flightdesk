@@ -39,7 +39,7 @@ Community Edition REST API.
 ## AI agents (MCP)
 
 Flightdeck has a built-in [MCP](https://modelcontextprotocol.io) server. Toggle it with the
-`MCP` pill in the top bar, in *Settings → MCP server*, or start with `cockpit --mcp`
+`MCP` pill in the top bar, in *Settings → MCP server*, or start with `flightdeck --mcp`
 (default port 7788, optional bearer token). It exposes 55 tools: engine tools
 (`list_definitions`, `get_element`, `find_elements`, `search_instances`, `get_instance`,
 `get_variables`, `set_variable`, `retry_job`, `modify_instance`, `batch`, …) and UI tools
@@ -51,7 +51,7 @@ Flightdeck has a built-in [MCP](https://modelcontextprotocol.io) server. Toggle 
 # Claude Code (user scope) — the repo also ships a project-scoped .mcp.json
 claude mcp add --transport http flightdeck http://127.0.0.1:7788/mcp
 # stdio-only clients
-cockpit --mcp-stdio http://127.0.0.1:7788/mcp
+flightdeck --mcp-stdio http://127.0.0.1:7788/mcp
 # exercise the server like an agent would
 python3 scripts/mcp_smoke.py
 ```
@@ -60,10 +60,25 @@ python3 scripts/mcp_smoke.py
 
 ```sh
 cargo build --release
-./target/release/cockpit                       # connection screen
-./target/release/cockpit --url http://localhost:8080/engine-rest --user demo --password demo
-./target/release/cockpit path/to/diagram.bpmn   # offline viewer
+./target/release/flightdeck                       # connection screen
+./target/release/flightdeck --url http://localhost:8080/engine-rest --user demo --password demo
+./target/release/flightdeck path/to/diagram.bpmn   # offline viewer
 ```
+
+### Install on Arch Linux
+
+A full install puts three things in place: the binary in `/usr/bin`, the desktop entry in
+`/usr/share/applications`, and the icon in the hicolor theme. On Wayland the last two are what
+give the window its icon: the compositor looks the app id `flightdeck` up in the desktop entry.
+
+```sh
+cd packaging/arch && makepkg -si     # builds from this checkout; needs cargo and librsvg
+```
+
+The PKGBUILD lists the run-time libraries the binary loads dynamically (Vulkan loader, Wayland,
+xkbcommon, the X11 fallback) and optional ones (a Vulkan driver, portal for theme detection,
+xdg-utils for links). Edit `assets/icon.svg` and run `scripts/render-icon.sh` to refresh the
+embedded icon.
 
 The connection screen accepts a bare host, a Cockpit URL or the REST base URL and normalises it.
 Credentials are stored in the OS config directory only when "remember password" is ticked.

@@ -568,7 +568,7 @@ settings, saved searches, dock widths, collapsed sections, column layouts.
 Flightdeck embeds a Model Context Protocol server (Streamable HTTP, JSON-RPC 2.0, localhost
 only, optional bearer token) so an agent can do everything a human operator can, through the
 same code paths. It is off by default and toggled from the top-bar pill ("MCP :7788"), from
-Settings → MCP server, or with `cockpit --mcp`.
+Settings → MCP server, or with `flightdeck --mcp`.
 
 Design rules:
 
@@ -592,7 +592,7 @@ Design rules:
   (`ui_key`, `ui_type`). Pointer clicks are not synthesised; every clickable thing has a
   semantic tool instead (`ui_select`, `ui_dock`, `ui_tabs`, `ui_command`, `ui_hit_test`).
 - **Clients:** Claude Code reads the project `.mcp.json` (`type: http`); any stdio-only client
-  can use `cockpit --mcp-stdio http://127.0.0.1:7788/mcp` as a bridge. A `flightdeck` skill in
+  can use `flightdeck --mcp-stdio http://127.0.0.1:7788/mcp` as a bridge. A `flightdeck` skill in
   `.claude/skills` teaches the workflow (orient → read → act → show).
 
 ## 16. Decisions log

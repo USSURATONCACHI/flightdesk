@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Flightdeck
+GenericName=Camunda Cockpit
+Comment=Fast, keyboard-first cockpit for Camunda 7 process engines
+Exec=flightdeck %F
+TryExec=flightdeck
+Icon=flightdeck
+Terminal=false
+StartupNotify=true
+StartupWMClass=flightdeck
+SingleMainWindow=true
+Categories=Development;Utility;
+Keywords=Camunda;BPMN;process;workflow;instance;incident;cockpit;

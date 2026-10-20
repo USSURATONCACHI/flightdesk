@@ -10,7 +10,7 @@ GEOM=$(xrandr --query 2>/dev/null | awk '/ connected/{print $0}' | grep -v prima
 if [ -z "$GEOM" ]; then GEOM=$(xrandr --query 2>/dev/null | grep -oE '[0-9]+x[0-9]+\+[0-9]+\+[0-9]+' | head -1 || echo "1920x1080+0+0"); fi
 MW=${GEOM%%x*}; REST=${GEOM#*x}; MH=${REST%%+*}; REST=${REST#*+}; MX=${REST%%+*}; MY=${REST#*+}
 X=$((MX + MW - W)); Y=$MY
-BIN=${FLIGHTDECK_BIN:-./target/debug/cockpit}
+BIN=${FLIGHTDECK_BIN:-./target/debug/flightdeck}
 # Never touch the developer's real configuration: test runs get their own config/data dirs.
 TESTROOT=${FLIGHTDECK_TEST_ROOT:-${TMPDIR:-/tmp}/flightdeck-dev}
 export FLIGHTDECK_CONFIG_DIR=${FLIGHTDECK_CONFIG_DIR:-$TESTROOT/config}

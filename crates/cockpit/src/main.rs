@@ -124,6 +124,9 @@ fn main() -> eframe::Result<()> {
     }
     let (w, h) = args.size.unwrap_or((1440.0, 900.0));
     let mut viewport = egui::ViewportBuilder::default().with_title("Flightdeck").with_inner_size([w, h]).with_min_inner_size([800.0, 500.0]).with_app_id("flightdeck");
+    if let Some(icon) = cockpit::icon::window_icon() {
+        viewport = viewport.with_icon(icon);
+    }
     // FLIGHTDECK_NO_FOCUS=1: create the window without activating it (no focus stealing).
     if std::env::var("FLIGHTDECK_NO_FOCUS").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) || args.no_focus {
         viewport = viewport.with_active(false);

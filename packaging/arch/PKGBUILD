@@ -1,0 +1,86 @@
+# Maintainer: Flightdeck authors
+#
+# Builds the package from this working copy (no download): run `makepkg -si` inside
+# packaging/arch. Build artefacts (src/, pkg/, *.pkg.tar.*) are git-ignored.
+
+pkgname=flightdeck
+pkgver=0.1.0.r17.ge3ebc08
+pkgrel=1
+pkgdesc="Fast, keyboard-first cockpit for Camunda 7 process engines, with a built-in MCP server"
+arch=('x86_64' 'aarch64')
+url="https://github.com/flightdeck/flightdeck"
+license=('MIT')
+# Everything graphical is loaded at run time (dlopen), so ldd shows only libc: list it by hand.
+depends=(
+  'gcc-libs' 'glibc'
+  'vulkan-icd-loader'            # wgpu renders through Vulkan
+  'wayland' 'libxkbcommon'       # native Wayland window + keymaps
+  'libx11' 'libxcursor' 'libxi' 'libxcb' 'libxkbcommon-x11' 'libglvnd'  # X11 / Xwayland fallback
+  'hicolor-icon-theme'
+)
+optdepends=(
+  'vulkan-radeon: GPU rendering on AMD'
+  'vulkan-intel: GPU rendering on Intel'
+  'nvidia-utils: GPU rendering on NVIDIA'
+  'vulkan-swrast: software rendering when no GPU driver is available'
+  'xdg-desktop-portal: follow the desktop light/dark theme'
+  'glib2: theme detection via gdbus (or systemd for busctl)'
+  'xdg-utils: open links in the browser'
+)
+makedepends=('cargo' 'librsvg')
+options=('!lto')
+source=()
+sha256sums=()
+
+_repo="$startdir/../.."
+
+pkgver() {
+  cd "$_repo"
+  local base
+  base=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    printf '%s.r%s.g%s' "$base" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  else
+    printf '%s' "$base"
+  fi
+}
+
+prepare() {
+  cd "$_repo"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_repo"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="$srcdir/target"
+  cargo build --release --locked --frozen -p cockpit
+  # hicolor rasters from the SVG master
+  local s
+  for s in 16 22 24 32 48 64 128 256 512; do
+    rsvg-convert -w "$s" -h "$s" assets/icon.svg -o "$srcdir/flightdeck-$s.png"
+  done
+}
+
+check() {
+  cd "$_repo"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="$srcdir/target"
+  # UI smoke tests render headlessly through wgpu; they fall back to a software adapter.
+  cargo test --release --locked --frozen --workspace
+}
+
+package() {
+  cd "$_repo"
+  install -Dm755 "$srcdir/target/release/flightdeck" "$pkgdir/usr/bin/flightdeck"
+  install -Dm644 packaging/flightdeck.desktop "$pkgdir/usr/share/applications/flightdeck.desktop"
+  install -Dm644 assets/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/flightdeck.svg"
+  local s
+  for s in 16 22 24 32 48 64 128 256 512; do
+    install -Dm644 "$srcdir/flightdeck-$s.png" "$pkgdir/usr/share/icons/hicolor/${s}x${s}/apps/flightdeck.png"
+  done
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md DESIGN.md -t "$pkgdir/usr/share/doc/$pkgname"
+  install -Dm644 .claude/skills/flightdeck/SKILL.md "$pkgdir/usr/share/doc/$pkgname/mcp-skill.md"
+}
