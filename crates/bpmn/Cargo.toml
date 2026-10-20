@@ -1,0 +1,9 @@
+[package]
+name = "bpmn"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+roxmltree.workspace = true
+thiserror.workspace = true
