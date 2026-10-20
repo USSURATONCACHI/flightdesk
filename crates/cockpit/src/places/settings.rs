@@ -119,6 +119,29 @@ impl SettingsPlace {
                         }
                     });
                     dirty |= ui.checkbox(&mut app.settings.inertia, "Inertia after flicking the diagram").changed();
+                    ui.add_space(4.0);
+                    ui.label("Zoom speed");
+                    let (lo, hi) = crate::settings::ZOOM_SPEED_RANGE;
+                    let zoom_row = |ui: &mut egui::Ui, label: &str, v: &mut f32, tip: &str, default: f32| -> bool {
+                        let mut changed = false;
+                        ui.horizontal(|ui| {
+                            ui.add_sized([110.0, 20.0], egui::Label::new(label)).on_hover_text(tip);
+                            // Wheel: logarithmic so halving and doubling take the same distance.
+                            changed |= ui.add(egui::Slider::new(v, lo..=hi).logarithmic(true).show_value(false)).on_hover_text(tip).changed();
+                            changed |= ui.add(egui::DragValue::new(v).range(lo..=hi).speed(0.02).fixed_decimals(2).suffix("×")).changed();
+                            if (*v - default).abs() > 1e-6 && ui.small_button("reset").on_hover_text(format!("back to {default}×")).clicked() {
+                                *v = default;
+                                changed = true;
+                            }
+                        });
+                        changed
+                    };
+                    let d = crate::settings::Settings::default();
+                    dirty |= zoom_row(ui, "Global", &mut app.settings.zoom_speed, "Scales every zoom gesture: wheel, pinch, the zoom dial and the keyboard", d.zoom_speed);
+                    dirty |= zoom_row(ui, "Mouse", &mut app.settings.zoom_speed_mouse, "Extra factor for pointer gestures (wheel, pinch, zoom dial), on top of Global", d.zoom_speed_mouse);
+                    dirty |= zoom_row(ui, "Keyboard", &mut app.settings.zoom_speed_keyboard, "Extra factor for + / - keys, on top of Global", d.zoom_speed_keyboard);
+                    dirty |= zoom_row(ui, "Alt held", &mut app.settings.alt_speed, "Pan and zoom speed while Alt is held, on top of everything else. Below 1 slows down for fine work", d.alt_speed);
+                    ui.label(RichText::new(format!("effective: mouse {}×, keyboard {}×, with Alt ×{} more", crate::viewport::fmt_multiplier(app.settings.zoom_mouse()), crate::viewport::fmt_multiplier(app.settings.zoom_keyboard()), crate::viewport::fmt_multiplier(app.settings.alt_boost()))).weak().small());
                     ui.horizontal(|ui| {
                         ui.label("Unlimited drag");
                         use crate::viewport::WrapMode;

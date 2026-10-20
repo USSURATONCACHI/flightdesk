@@ -96,6 +96,9 @@ at start-up. Without them the platform defaults are used (`~/.config/flightdeck`
 `~/.local/share/flightdeck` on Linux). Development runs (`scripts/shot.sh`) always use a
 scratch pair so they never touch your real configuration.
 
+Logs go to stdout (`flightdeck > flightdeck.log 2>&1` to keep them); panics are appended to
+`<config dir>/crash.log`. `RUST_LOG=debug` raises the level.
+
 Environment: `FLIGHTDECK_NO_FOCUS=1` opens the window without taking focus;
 `FLIGHTDECK_WINDOW_POS=x,y` sets the initial position (not on Wayland — `scripts/shot.sh`
 uses Xwayland to place test windows on the second monitor).
@@ -105,7 +108,11 @@ uses Xwayland to place test windows on the second monitor).
 | Keys | Action |
 |---|---|
 | Wheel / pinch, Shift+wheel | zoom at cursor, pan horizontally |
-| Alt (hold) | pan and zoom twice as fast (a small badge orbits the cursor while active) |
+| Alt (hold) | pan and zoom faster, ×2 by default (a small badge orbits the cursor while active) |
+
+Speeds are adjustable in *Settings → Diagram input*: a global zoom multiplier, separate mouse
+(wheel, pinch, dial) and keyboard (`+` `−`) multipliers, and the Alt factor (values below 1 turn
+Alt into a precision mode). Effective zoom speed = global × device, × Alt while held.
 | Drag, middle-drag, Space+drag | pan (flick for inertia; the pointer wraps at the view edge so a drag never runs out of room) |
 | Zoom dial (bottom left) | drag left/right to zoom without limit; wheel over it zooms too |
 | ↑↓←→ · WASD · HJKL | pan (hold to accelerate, Shift faster) |

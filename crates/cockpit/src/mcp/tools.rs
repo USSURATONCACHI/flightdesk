@@ -78,7 +78,7 @@ fn specs_vec() -> Vec<Spec> {
         s("ui_screenshot", "Screenshot of the window as PNG (returned as image; also saved to path if given). max_width downsizes to save tokens.", obj(json!({"path": {"type": "string"}, "max_width": {"type": "integer", "default": 1280}}), &[])),
         s("ui_confirm", "Accept or cancel the pending confirmation dialog.", obj(json!({"accept": {"type": "boolean"}}), &["accept"])),
         s("ui_modification_queue", "Read or edit the Modify tab of the open instance: list | add (instruction) | clear | apply.", obj(json!({"action": {"type": "string", "enum": ["list", "add", "clear", "apply"]}, "instruction": {"type": "object"}}), &["action"])),
-        s("ui_settings", "Read or change settings: theme (system|light|dark), density, wheel_zooms, inertia, pointer_wrap (auto|off), refresh_instance_secs, refresh_list_secs, page_size, paused.", obj(json!({"set": {"type": "object"}}), &[])),
+        s("ui_settings", "Read or change settings: theme (system|light|dark), density, wheel_zooms, inertia, pointer_wrap (auto|off), zoom_speed / zoom_speed_mouse / zoom_speed_keyboard / alt_speed (multipliers 0.1–10; effective = global × device, Alt held multiplies by alt_speed), refresh_instance_secs, refresh_list_secs, page_size, paused.", obj(json!({"set": {"type": "object"}}), &[])),
         s("ui_connect", "Connect to an engine (URL, user, password) or disconnect.", obj(json!({"url": {"type": "string"}, "user": {"type": "string"}, "password": {"type": "string"}, "disconnect": {"type": "boolean"}}), &[])),
     ]
 }
@@ -1123,6 +1123,10 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 let key = parse_key(k).ok_or(format!("unknown key {k}"))?;
                 let mods = egui::Modifiers { ctrl: arg_bool(&a, "ctrl").unwrap_or(false), shift: arg_bool(&a, "shift").unwrap_or(false), alt: arg_bool(&a, "alt").unwrap_or(false), command: arg_bool(&a, "ctrl").unwrap_or(false), mac_cmd: false };
                 let n = arg_i(&a, "repeat").unwrap_or(1).clamp(1, 50);
+                // Diagram shortcuts only fire while the canvas has keyboard focus (or the pointer
+                // hovers it). An agent has no pointer, so hand the canvas focus first, as a click
+                // would; places without a diagram simply ignore this.
+                let _ = with_diagram(app, |view, _| view.request_focus());
                 for _ in 0..n {
                     app.synthetic_events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: mods });
                     app.synthetic_events.push(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers: mods });
@@ -1232,6 +1236,19 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                                     _ => crate::viewport::WrapMode::Auto,
                                 }
                             }
+                            "zoom_speed" | "zoom_speed_mouse" | "zoom_speed_keyboard" | "alt_speed" => {
+                                let (lo, hi) = crate::settings::ZOOM_SPEED_RANGE;
+                                let x = v.as_f64().ok_or(format!("{k} must be a number"))? as f32;
+                                if !(lo..=hi).contains(&x) {
+                                    return Err(format!("{k} must be within {lo}..={hi}"));
+                                }
+                                match k.as_str() {
+                                    "zoom_speed" => app.settings.zoom_speed = x,
+                                    "zoom_speed_mouse" => app.settings.zoom_speed_mouse = x,
+                                    "zoom_speed_keyboard" => app.settings.zoom_speed_keyboard = x,
+                                    _ => app.settings.alt_speed = x,
+                                }
+                            }
                             "refresh_instance_secs" => app.settings.refresh_instance_secs = v.as_u64().unwrap_or(5),
                             "refresh_list_secs" => app.settings.refresh_list_secs = v.as_u64().unwrap_or(10),
                             "page_size" => app.settings.page_size = v.as_u64().unwrap_or(100) as usize,
@@ -1241,7 +1258,7 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                     }
                     app.settings_dirty = true;
                 }
-                Ok(Some(json!({"theme": format!("{:?}", app.settings.theme), "density": app.settings.density, "wheel_zooms": app.settings.wheel_zooms, "inertia": app.settings.inertia, "pointer_wrap": format!("{:?}", app.settings.pointer_wrap), "refresh_instance_secs": app.settings.refresh_instance_secs, "refresh_list_secs": app.settings.refresh_list_secs, "page_size": app.settings.page_size, "paused": app.paused, "mcp_port": app.settings.mcp_port})))
+                Ok(Some(json!({"theme": format!("{:?}", app.settings.theme), "density": app.settings.density, "wheel_zooms": app.settings.wheel_zooms, "inertia": app.settings.inertia, "pointer_wrap": format!("{:?}", app.settings.pointer_wrap), "zoom_speed": app.settings.zoom_speed, "zoom_speed_mouse": app.settings.zoom_speed_mouse, "zoom_speed_keyboard": app.settings.zoom_speed_keyboard, "alt_speed": app.settings.alt_speed, "zoom_effective": {"mouse": app.settings.zoom_mouse(), "keyboard": app.settings.zoom_keyboard(), "alt": app.settings.alt_boost()}, "refresh_instance_secs": app.settings.refresh_instance_secs, "refresh_list_secs": app.settings.refresh_list_secs, "page_size": app.settings.page_size, "paused": app.paused, "mcp_port": app.settings.mcp_port})))
             }
             "ui_connect" => {
                 if arg_bool(&a, "disconnect") == Some(true) {

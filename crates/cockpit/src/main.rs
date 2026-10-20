@@ -72,6 +72,12 @@ fn parse_args() -> Args {
     a
 }
 
+/// Plain stdout logging; redirect it yourself when you want a file. `RUST_LOG` sets the level.
+fn init_logging(dirs: &paths::Dirs) {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu=warn,naga=warn,eframe=warn,egui_wgpu=warn")).target(env_logger::Target::Stdout).init();
+    log::info!("flightdeck {} · config {} · data {}", env!("CARGO_PKG_VERSION"), dirs.config.display(), dirs.data.display());
+}
+
 /// Write panics to `<config dir>/crash.log` as well as stderr, so a crash in a windowed session
 /// still leaves a backtrace behind.
 fn install_crash_log(path: Option<PathBuf>) {
@@ -94,7 +100,6 @@ fn install_crash_log(path: Option<PathBuf>) {
 }
 
 fn main() -> eframe::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu=warn,naga=warn,eframe=warn,egui_wgpu=warn")).init();
     let args = parse_args();
     // Directories: --config-dir/--data-dir, else FLIGHTDECK_CONFIG_DIR/FLIGHTDECK_DATA_DIR, else
     // the platform defaults. A partial pair is refused (see `paths::resolve`).
@@ -106,6 +111,7 @@ fn main() -> eframe::Result<()> {
             std::process::exit(2);
         }
     };
+    init_logging(&dirs);
     install_crash_log(Some(dirs.crash_log()));
     if let Some(url) = &args.mcp_stdio {
         // stdio ↔ HTTP bridge for MCP clients that only speak stdio.

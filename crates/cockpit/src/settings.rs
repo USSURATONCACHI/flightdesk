@@ -42,6 +42,9 @@ pub struct SavedSearch {
     pub query: String,
 }
 
+/// Allowed range of each zoom speed multiplier (global and per device).
+pub const ZOOM_SPEED_RANGE: (f32, f32) = (0.1, 10.0);
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Settings {
@@ -54,6 +57,13 @@ pub struct Settings {
     pub wheel_zooms: bool,
     pub inertia: bool,
     pub pointer_wrap: crate::viewport::WrapMode,
+    /// Zoom speed multipliers: every zoom gesture is scaled by `zoom_speed` times the
+    /// multiplier of its input device. 1.0 = the base rate of each gesture.
+    pub zoom_speed: f32,
+    pub zoom_speed_mouse: f32,
+    pub zoom_speed_keyboard: f32,
+    /// Factor applied to pan and zoom gestures while Alt is held (values below 1 slow down).
+    pub alt_speed: f32,
     pub refresh_instance_secs: u64,
     pub refresh_list_secs: u64,
     pub pause_when_unfocused: bool,
@@ -82,6 +92,10 @@ impl Default for Settings {
             wheel_zooms: true,
             inertia: true,
             pointer_wrap: Default::default(),
+            zoom_speed: 2.0,
+            zoom_speed_mouse: 1.0,
+            zoom_speed_keyboard: 1.0,
+            alt_speed: 2.0,
             refresh_instance_secs: 5,
             refresh_list_secs: 10,
             pause_when_unfocused: true,
@@ -101,6 +115,19 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Effective zoom multiplier for pointer gestures (wheel, pinch, the zoom dial).
+    pub fn zoom_mouse(&self) -> f32 {
+        (self.zoom_speed * self.zoom_speed_mouse).clamp(ZOOM_SPEED_RANGE.0 * ZOOM_SPEED_RANGE.0, ZOOM_SPEED_RANGE.1 * ZOOM_SPEED_RANGE.1)
+    }
+    /// Alt multiplier, clamped to the allowed range so a hand-edited file cannot freeze input.
+    pub fn alt_boost(&self) -> f32 {
+        self.alt_speed.clamp(ZOOM_SPEED_RANGE.0, ZOOM_SPEED_RANGE.1)
+    }
+    /// Effective zoom multiplier for the keyboard (+ / -, Alt+ / Alt-).
+    pub fn zoom_keyboard(&self) -> f32 {
+        (self.zoom_speed * self.zoom_speed_keyboard).clamp(ZOOM_SPEED_RANGE.0 * ZOOM_SPEED_RANGE.0, ZOOM_SPEED_RANGE.1 * ZOOM_SPEED_RANGE.1)
+    }
+
     /// Load from an explicit file. Missing files yield defaults. Everything the file does contain
     /// is kept field by field: a value that no longer deserialises (a renamed enum variant, a
     /// type change between versions, one malformed connection) only resets *that* value, never
@@ -301,5 +328,33 @@ pub mod perms {
             let _ = issues;
             Vec::new()
         }
+    }
+}
+
+#[cfg(test)]
+mod zoom_speed_tests {
+    use super::*;
+
+    #[test]
+    fn old_files_without_zoom_fields_get_the_defaults() {
+        let (s, warnings) = Settings::from_toml_lenient("wheel_zooms = false\n").unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!s.wheel_zooms);
+        assert_eq!(s.alt_speed, 2.0);
+        assert_eq!(Settings { alt_speed: 0.0, ..Default::default() }.alt_boost(), ZOOM_SPEED_RANGE.0);
+        assert_eq!((s.zoom_speed, s.zoom_speed_mouse, s.zoom_speed_keyboard), (2.0, 1.0, 1.0));
+        assert_eq!(s.zoom_mouse(), 2.0);
+        assert_eq!(s.zoom_keyboard(), 2.0);
+    }
+
+    #[test]
+    fn effective_multiplier_is_global_times_device_and_clamped() {
+        let s = Settings { zoom_speed: 2.0, zoom_speed_mouse: 0.5, zoom_speed_keyboard: 3.0, ..Default::default() };
+        assert_eq!(s.zoom_mouse(), 1.0);
+        assert_eq!(s.zoom_keyboard(), 6.0);
+        let wild = Settings { zoom_speed: 1000.0, zoom_speed_mouse: 1000.0, zoom_speed_keyboard: 0.0, ..Default::default() };
+        let (lo, hi) = ZOOM_SPEED_RANGE;
+        assert_eq!(wild.zoom_mouse(), hi * hi, "a hand-edited file cannot make zoom unusable");
+        assert_eq!(wild.zoom_keyboard(), lo * lo);
     }
 }

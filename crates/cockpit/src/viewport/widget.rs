@@ -16,13 +16,19 @@ pub struct DiagramSettings {
     /// Unlimited drags: teleport or lock the pointer at the view edge.
     pub wrap: super::wrap::WrapMode,
     pub pan_speed: f32,
+    /// Base factor of one keyboard zoom step before `zoom_keyboard` is applied.
     pub zoom_step: f32,
+    /// Zoom speed multipliers for pointer gestures and for the keyboard (1.0 = base rate).
+    pub zoom_mouse: f32,
+    pub zoom_keyboard: f32,
+    /// Multiplier for pan and zoom while Alt is held.
+    pub alt_boost: f32,
     pub hover_delay: f64,
 }
 
 impl Default for DiagramSettings {
     fn default() -> Self {
-        Self { wheel_zooms: true, inertia: true, wrap: Default::default(), pan_speed: 600.0, zoom_step: 1.25, hover_delay: 0.25 }
+        Self { wheel_zooms: true, inertia: true, wrap: Default::default(), pan_speed: 600.0, zoom_step: 1.25, zoom_mouse: 1.0, zoom_keyboard: 1.0, alt_boost: 2.0, hover_delay: 0.25 }
     }
 }
 
@@ -361,13 +367,13 @@ fn show_impl(
     let keys_allowed = (view.focused || hovered) && !text_focus && !view.find_bar_has_focus(&ctx);
 
     // ---- wheel / pinch ----
-    // Alt doubles every movement: pan, wheel/pinch zoom, key zoom and the dial.
-    let boost = if ctx.input(|i| i.modifiers.alt) { 2.0 } else { 1.0 };
+    // Alt scales every movement (pan, wheel/pinch zoom, key zoom, the dial) by `alt_boost`.
+    let boost = if ctx.input(|i| i.modifiers.alt) { settings.alt_boost } else { 1.0 };
     if hovered {
         let (scroll, zoom_delta, mods) = ctx.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.modifiers));
         let anchor = pointer.unwrap_or(rect.center());
         if zoom_delta != 1.0 {
-            view.camera.zoom_by(rect, zoom_delta.powf(boost), anchor);
+            view.camera.zoom_by(rect, zoom_delta.powf(boost * settings.zoom_mouse), anchor);
         }
         if scroll != Vec2::ZERO {
             let wheel_zoom = settings.wheel_zooms != mods.ctrl;
@@ -375,7 +381,7 @@ fn show_impl(
                 // horizontal pan (egui already maps shift+wheel to x)
                 view.camera.pan_screen(Vec2::new(if scroll.x != 0.0 { scroll.x } else { scroll.y }, 0.0) * boost);
             } else if wheel_zoom && scroll.y != 0.0 {
-                let factor = (scroll.y * 0.0018 * boost).exp();
+                let factor = (scroll.y * WHEEL_ZOOM_RATE * boost * settings.zoom_mouse).exp();
                 view.camera.zoom_by(rect, factor, anchor);
                 if scroll.x != 0.0 {
                     view.camera.pan_screen(Vec2::new(scroll.x, 0.0) * boost);
@@ -580,7 +586,7 @@ fn show_impl(
         }
     }
 
-    alt_badge(&ctx, view, style, rect, hovered || response.dragged(), pointer);
+    alt_badge(&ctx, view, style, rect, settings.alt_boost, hovered || response.dragged(), pointer);
 
     // context menu
     let target = view.context_target;
@@ -599,6 +605,15 @@ fn text_input_focused(ctx: &egui::Context, canvas_id: Id) -> bool {
         _ => false,
     }
 }
+
+/// "2", "0.5", "1.25": a multiplier without trailing zeros, for badges and labels.
+pub fn fmt_multiplier(x: f32) -> String {
+    let s = format!("{x:.2}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// Base wheel zoom rate: log-zoom per scroll pixel at multiplier 1.
+pub const WHEEL_ZOOM_RATE: f32 = 0.0018;
 
 /// How long a find highlight takes to fade in or out, in seconds. Short enough to feel
 /// immediate, long enough that a token hopping between activities glides instead of blinking.
@@ -701,18 +716,21 @@ fn handle_keys(ctx: &egui::Context, view: &mut DiagramView, model: &Model, setti
         view.key_hold_since = None;
     }
     ctx.input_mut(|i| {
-        let step = settings.zoom_step;
+        // One key press zooms by `zoom_step`, scaled in log space by the keyboard multiplier.
+        let step = settings.zoom_step.powf(settings.zoom_keyboard);
+        // Most specific first: egui's `consume_key` treats extra Alt/Shift as a match
+        // (`Modifiers::matches_logically`), so a plain `+` check would swallow Alt+`+`.
+        if i.consume_key(Modifiers::ALT, Key::Plus) || i.consume_key(Modifiers::ALT, Key::Equals) || i.consume_key(Modifiers::ALT.plus(Modifiers::SHIFT), Key::Equals) {
+            view.camera.zoom_by(rect, step.powf(settings.alt_boost), anchor);
+        }
+        if i.consume_key(Modifiers::ALT, Key::Minus) {
+            view.camera.zoom_by(rect, 1.0 / step.powf(settings.alt_boost), anchor);
+        }
         if i.consume_key(Modifiers::NONE, Key::Plus) || i.consume_key(Modifiers::NONE, Key::Equals) || i.consume_key(Modifiers::SHIFT, Key::Equals) || i.consume_key(Modifiers::SHIFT, Key::Plus) {
             view.camera.zoom_by(rect, step, anchor);
         }
-        if i.consume_key(Modifiers::ALT, Key::Plus) || i.consume_key(Modifiers::ALT, Key::Equals) || i.consume_key(Modifiers::ALT.plus(Modifiers::SHIFT), Key::Equals) {
-            view.camera.zoom_by(rect, step * step, anchor);
-        }
         if i.consume_key(Modifiers::NONE, Key::Minus) {
             view.camera.zoom_by(rect, 1.0 / step, anchor);
-        }
-        if i.consume_key(Modifiers::ALT, Key::Minus) {
-            view.camera.zoom_by(rect, 1.0 / (step * step), anchor);
         }
         if i.consume_key(Modifiers::NONE, Key::Num0) {
             view.needs_fit = true;
@@ -730,8 +748,9 @@ fn handle_keys(ctx: &egui::Context, view: &mut DiagramView, model: &Model, setti
             view.show_ids = !view.show_ids;
         }
     });
-    let f = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F));
+    // Shift variants first: `consume_key` lets extra Shift/Alt through (see the zoom keys).
     let shift_f = ctx.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::F));
+    let f = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F));
     if f {
         match view.selection.or(view.hover) {
             Some(Ref::Element(i)) => view.fit_element(model, i),
@@ -749,8 +768,8 @@ fn handle_keys(ctx: &egui::Context, view: &mut DiagramView, model: &Model, setti
         view.fit_tokens_marker = true;
     }
     // Tab cycling in reading order
-    let tab = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
     let shift_tab = ctx.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
+    let tab = ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab));
     if (tab || shift_tab) && !model.reading_order.is_empty() {
         let ro = &model.reading_order;
         let cur = match view.selection {
@@ -1166,8 +1185,8 @@ fn zoom_dial(ui: &mut Ui, view: &mut DiagramView, dial: Rect, viewport: Rect, st
         let pointer = ctx.input(|i| i.pointer.hover_pos());
         let d = view.dial_wrap.delta(&ctx, resp.drag_delta(), pointer, dial.expand2(Vec2::new(0.0, 40.0)), (true, false));
         if d.x != 0.0 {
-            let boost = if ctx.input(|i| i.modifiers.alt) { 2.0 } else { 1.0 };
-            view.camera.zoom_by(viewport, (d.x * boost / PX_PER_OCTAVE).exp2(), anchor);
+            let boost = if ctx.input(|i| i.modifiers.alt) { settings.alt_boost } else { 1.0 };
+            view.camera.zoom_by(viewport, (d.x * boost * settings.zoom_mouse / PX_PER_OCTAVE).exp2(), anchor);
         }
         ctx.set_cursor_icon(CursorIcon::ResizeHorizontal);
     } else if resp.drag_stopped() {
@@ -1177,7 +1196,7 @@ fn zoom_dial(ui: &mut Ui, view: &mut DiagramView, dial: Rect, viewport: Rect, st
         ctx.set_cursor_icon(CursorIcon::ResizeHorizontal);
         let scroll = ctx.input(|i| i.smooth_scroll_delta);
         if scroll != Vec2::ZERO {
-            view.camera.zoom_by(viewport, ((scroll.x + scroll.y) / PX_PER_OCTAVE).exp2(), anchor);
+            view.camera.zoom_by(viewport, ((scroll.x + scroll.y) * settings.zoom_mouse / PX_PER_OCTAVE).exp2(), anchor);
         }
     }
     resp.on_hover_text("Drag left or right to zoom, as far as you like");
@@ -1434,7 +1453,7 @@ use super::render::blend;
 
 /// A small "Alt ×2" pill that fades in and slowly orbits the cursor while Alt is held over the
 /// diagram, so the doubled speed is never a surprise.
-fn alt_badge(ctx: &egui::Context, view: &DiagramView, style: &DiagramStyle, rect: Rect, over_canvas: bool, pointer: Option<Pos2>) {
+fn alt_badge(ctx: &egui::Context, view: &DiagramView, style: &DiagramStyle, rect: Rect, alt_boost: f32, over_canvas: bool, pointer: Option<Pos2>) {
     let alt = ctx.input(|i| i.modifiers.alt) && over_canvas && pointer.is_some();
     let t = ctx.animate_bool_with_time(view.id.with("alt-badge"), alt, 0.18);
     if t <= 0.0 {
@@ -1449,7 +1468,7 @@ fn alt_badge(ctx: &egui::Context, view: &DiagramView, style: &DiagramStyle, rect
     let center = p + Vec2::angled(-angle) * radius;
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, view.id.with("alt-badge-layer"))).with_clip_rect(rect);
     let font = FontId::proportional(10.5);
-    let galley = painter.layout_no_wrap("Alt ×2".to_string(), font, style.badge_text);
+    let galley = painter.layout_no_wrap(format!("Alt ×{}", fmt_multiplier(alt_boost)), font, style.badge_text);
     let size = galley.size() + Vec2::new(12.0, 6.0);
     let pill = Rect::from_center_size(center, size);
     let fill = style.selection.gamma_multiply(0.92 * eased);
@@ -1586,5 +1605,18 @@ mod edge_arrow_tests {
         // a point in free space is untouched
         let q = Pos2::new(800.0, 300.0);
         assert_eq!(nudge_out_of(q, &[find_bar], within), q);
+    }
+}
+
+#[cfg(test)]
+mod multiplier_format_tests {
+    #[test]
+    fn multipliers_print_without_noise() {
+        use super::fmt_multiplier as f;
+        assert_eq!(f(2.0), "2");
+        assert_eq!(f(0.5), "0.5");
+        assert_eq!(f(1.25), "1.25");
+        assert_eq!(f(0.333), "0.33");
+        assert_eq!(f(10.0), "10");
     }
 }

@@ -205,7 +205,7 @@ impl App {
     }
 
     pub fn diagram_settings(&self) -> DiagramSettings {
-        DiagramSettings { wheel_zooms: self.settings.wheel_zooms, inertia: self.settings.inertia, wrap: self.settings.pointer_wrap, ..Default::default() }
+        DiagramSettings { wheel_zooms: self.settings.wheel_zooms, inertia: self.settings.inertia, wrap: self.settings.pointer_wrap, zoom_mouse: self.settings.zoom_mouse(), zoom_keyboard: self.settings.zoom_keyboard(), alt_boost: self.settings.alt_boost(), ..Default::default() }
     }
 
     pub fn auto_refresh_allowed(&self) -> bool {

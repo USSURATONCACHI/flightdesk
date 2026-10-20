@@ -155,3 +155,49 @@ fn alt_doubles_wheel_zoom_and_renders_badge() {
         img.save(format!("{dir}/alt_badge.png")).unwrap();
     }
 }
+
+/// Modified shortcuts must not be swallowed by their plain variants: egui's `consume_key`
+/// accepts extra Shift/Alt, so the plain check has to come second. Shift+Tab walks back,
+/// Alt+`+` zooms by the Alt factor, and the keyboard zoom multiplier scales `+`.
+#[test]
+fn modified_shortcuts_are_not_shadowed_by_plain_ones() {
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn");
+    let ctx = egui::Context::default();
+    let mut settings = Settings::default();
+    settings.zoom_speed = 1.0; // keyboard step = 1.25 exactly
+    settings.alt_speed = 0.5;
+    let mut app = App::new(&ctx, settings, 1.0);
+    app.offline = true;
+    app.navigate(cockpit::state::Nav::File { path: fixture.into() }, cockpit::state::NavMode::NewTab);
+    let mut harness = Harness::builder().with_size(egui::Vec2::new(1400.0, 860.0)).allow_missing_glyphs().build_ui_state(|ui, app: &mut App| app.frame(ui), app);
+    harness.run_steps(5);
+    let sel = |h: &mut Harness<'_, App>| call(h.state_mut(), "ui_state", json!({})).unwrap()["place"]["diagram"]["selection"]["element_id"].as_str().map(str::to_string);
+    let zoom = |h: &mut Harness<'_, App>| call(h.state_mut(), "ui_state", json!({})).unwrap()["place"]["diagram"]["zoom"].as_f64().unwrap();
+
+    call(harness.state_mut(), "ui_key", json!({"key": "Tab"})).unwrap();
+    harness.run_steps(2);
+    let first = sel(&mut harness).expect("Tab selects the first element in reading order");
+    call(harness.state_mut(), "ui_key", json!({"key": "Tab"})).unwrap();
+    harness.run_steps(2);
+    let second = sel(&mut harness).unwrap();
+    assert_ne!(first, second);
+    call(harness.state_mut(), "ui_key", json!({"key": "Tab", "shift": true})).unwrap();
+    harness.run_steps(2);
+    assert_eq!(sel(&mut harness).as_deref(), Some(first.as_str()), "Shift+Tab must walk back, not forward");
+
+    // settle the camera between key presses so ratios are exact
+    let z0 = {
+        call(harness.state_mut(), "ui_zoom", json!({"level": 1.0})).unwrap();
+        harness.run_steps(2);
+        zoom(&mut harness)
+    };
+    call(harness.state_mut(), "ui_key", json!({"key": "Plus"})).unwrap();
+    harness.run_steps(2);
+    let z1 = zoom(&mut harness);
+    assert!((z1 / z0 - 1.25).abs() < 1e-3, "plain + steps by 1.25 at keyboard multiplier 1, got {}", z1 / z0);
+    call(harness.state_mut(), "ui_key", json!({"key": "Plus", "alt": true})).unwrap();
+    harness.run_steps(2);
+    let z2 = zoom(&mut harness);
+    let expect = 1.25f64.powf(0.5);
+    assert!((z2 / z1 - expect).abs() < 1e-3, "Alt+`+` must use the Alt factor (0.5 → {expect:.4}), got {}", z2 / z1);
+}

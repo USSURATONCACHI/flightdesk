@@ -27,7 +27,7 @@ fn looks_code(v: &str) -> bool {
     v.contains("${") || v.contains("#{") || v.contains('.') && !v.contains(' ') && v.len() > 6 || v.starts_with('{') || v.starts_with('[') || v.chars().all(|c| c.is_ascii_hexdigit() || c == '-') && v.len() >= 32
 }
 
-/// Two-column row; value copies on click and shows full text on hover.
+/// Two-column row; the value is selectable text with a copy button in front of it.
 pub fn kv(ui: &mut Ui, key: &str, value: &str) -> egui::Response {
     kv_opt(ui, key, value, looks_code(value))
 }
@@ -39,22 +39,13 @@ pub fn kv_mono(ui: &mut Ui, key: &str, value: &str) -> egui::Response {
 pub fn kv_opt(ui: &mut Ui, key: &str, value: &str, mono: bool) -> egui::Response {
     let resp = ui.horizontal_top(|ui| {
         ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(key).color(ui.visuals().weak_text_color()).size(12.0)).halign(egui::Align::Max).truncate());
+        ui.spacing_mut().item_spacing.x = 4.0;
+        if !value.is_empty() {
+            crate::widgets::copy_button(ui, value);
+        }
         let text = if mono { RichText::new(value).monospace().size(12.0) } else { RichText::new(value) };
-        let label = egui::Label::new(text).wrap().sense(egui::Sense::click());
-        let r = ui.add(label).on_hover_text("Click to copy");
-        if r.clicked() {
-            ui.ctx().copy_text(value.to_string());
-            let id = r.id.with("copied");
-            ui.ctx().data_mut(|d| d.insert_temp(id, ui.input(|i| i.time)));
-        }
-        let id = r.id.with("copied");
-        if let Some(t) = ui.ctx().data(|d| d.get_temp::<f64>(id)) {
-            if ui.input(|i| i.time) - t < 1.2 {
-                ui.label(RichText::new("copied").small().color(crate::theme::COMPLETED));
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
-            }
-        }
-        r
+        // Plain selectable text: drag to select part of it, the button copies all of it.
+        ui.add(egui::Label::new(text).wrap().selectable(true))
     });
     resp.inner
 }
@@ -64,7 +55,9 @@ pub fn kv_link(ui: &mut Ui, key: &str, value: &str) -> bool {
     let mut clicked = false;
     ui.horizontal(|ui| {
         ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(key).color(ui.visuals().weak_text_color()).size(12.0)).halign(egui::Align::Max).truncate());
-        if ui.link(RichText::new(value).monospace().size(12.0)).clicked() {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        crate::widgets::copy_button(ui, value);
+        if ui.link(RichText::new(value).monospace().size(12.0)).on_hover_text("Open").clicked() {
             clicked = true;
         }
     });
