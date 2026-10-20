@@ -250,6 +250,17 @@ impl Client {
         )
         .await
     }
+    /// Every activity instance currently running for a definition (one request; used to map
+    /// process instances to the activities they wait at).
+    pub async fn unfinished_activity_instances(&self, definition_id: &str) -> Result<Vec<HistoricActivityInstance>> {
+        self.get("history/activity-instance", &[("processDefinitionId", definition_id.to_string()), ("unfinished", "true".into()), ("maxResults", "5000".into())]).await
+    }
+    /// Running instances of a definition whose business key contains `fragment`.
+    pub async fn instances_by_business_key_fragment(&self, definition_id: &str, fragment: &str) -> Result<Vec<ProcessInstance>> {
+        let q = ProcessInstanceQuery { process_definition_id: Some(definition_id.into()), business_key_like: Some(format!("%{fragment}%")), ..Default::default() };
+        self.process_instances(&q, 0, 500).await
+    }
+
     /// Number of historic activity instances per activity for a definition (heat map).
     pub async fn history_activity_count(&self, definition_id: &str, activity_id: &str) -> Result<i64> {
         let c: Count = self.get("history/activity-instance/count", &[("processDefinitionId", definition_id.to_string()), ("activityId", activity_id.to_string())]).await?;

@@ -323,3 +323,27 @@ fn settings_files_are_private_and_loose_permissions_are_detected_and_fixed() {
     assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
     let _ = std::fs::remove_dir_all(&base);
 }
+
+#[test]
+fn find_matches_running_instances_by_business_key_and_id() {
+    use camunda::{HistoricActivityInstance as H, ProcessInstance as P};
+    use cockpit::history::{instance_hits, FindInstanceOptions};
+    let act = |pi: &str, a: &str| H { process_instance_id: pi.into(), activity_id: a.into(), ..Default::default() };
+    let unfinished = vec![act("aaaa-1", "Task_A"), act("aaaa-1", "Task_A#multiInstanceBody"), act("bbbb-2", "Task_B"), act("cccc-6c46", "Task_B")];
+    let by_key = vec![P { id: "bbbb-2".into(), business_key: Some("ORD-6c46".into()), ..Default::default() }];
+    let both = FindInstanceOptions { business_keys: true, ids: true };
+    let hits = instance_hits(&unfinished, &by_key, "6c46", both);
+    let summary: Vec<(&str, &str, Option<&str>)> = hits.iter().map(|h| (h.activity_id.as_str(), h.process_instance_id.as_str(), h.business_key.as_deref())).collect();
+    assert_eq!(summary, vec![("Task_B", "bbbb-2", Some("ORD-6c46")), ("Task_B", "cccc-6c46", None)], "business-key hit and id hit, grouped by activity, MI bodies skipped");
+    // ids only: the business-key result is ignored
+    let hits = instance_hits(&unfinished, &by_key, "6C46", FindInstanceOptions { business_keys: false, ids: true });
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].process_instance_id, "cccc-6c46");
+    // business keys only
+    let hits = instance_hits(&unfinished, &by_key, "6c46", FindInstanceOptions { business_keys: true, ids: false });
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].process_instance_id, "bbbb-2");
+    // nothing enabled / empty query → nothing
+    assert!(instance_hits(&unfinished, &by_key, "6c46", FindInstanceOptions { business_keys: false, ids: false }).is_empty());
+    assert!(instance_hits(&unfinished, &by_key, "  ", both).is_empty());
+}

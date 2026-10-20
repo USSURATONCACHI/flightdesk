@@ -34,17 +34,45 @@ pub struct FindState {
     pub include_flows: bool,
     pub categories: Vec<String>,
     pub matches: Vec<bpmn::search::Match>,
+    /// Running instances matching the query, supplied by the place (business key / id search).
+    pub instance_hits: Vec<crate::history::InstanceHit>,
+    pub instance_hits_loading: bool,
+    /// Whether the place searches instances at all (settings); shown as a chip.
+    pub instances_enabled: bool,
     pub cursor: usize,
     pub want_focus: bool,
     last_key: Option<(String, bool, bool, Vec<String>)>,
 }
 
 impl FindState {
+    /// Everything Enter cycles through: element matches, then activities with matching instances.
+    pub fn targets(&self, model: &Model) -> Vec<Ref> {
+        let mut v: Vec<Ref> = self.matches.iter().map(|m| m.target).collect();
+        let mut seen = std::collections::HashSet::new();
+        for h in &self.instance_hits {
+            if seen.insert(h.activity_id.as_str()) {
+                if let Some(i) = model.element_idx(&h.activity_id) {
+                    let r = Ref::Element(i);
+                    if !v.contains(&r) {
+                        v.push(r);
+                    }
+                }
+            }
+        }
+        v
+    }
     pub fn current(&self) -> Option<Ref> {
         self.matches.get(self.cursor).map(|m| m.target)
     }
+    pub fn current_in(&self, model: &Model) -> Option<Ref> {
+        self.targets(model).get(self.cursor).copied()
+    }
     pub fn active(&self) -> bool {
         self.open && !self.query.trim().is_empty()
+    }
+    /// Activities with at least one matching instance.
+    pub fn instance_match_refs(&self, model: &Model) -> std::collections::HashSet<Ref> {
+        self.instance_hits.iter().filter_map(|h| model.element_idx(&h.activity_id).map(Ref::Element)).collect()
     }
     fn recompute(&mut self, model: &Model) -> bool {
         let key = (self.query.clone(), self.case_sensitive, self.include_flows, self.categories.clone());
@@ -183,6 +211,7 @@ impl DiagramView {
         self.find.open = false;
         self.find.query.clear();
         self.find.matches.clear();
+        self.find.instance_hits.clear();
         self.find.last_key = None;
     }
     pub fn fit_refs(&mut self, m: &Model, refs: impl Iterator<Item = Ref>) {
@@ -442,12 +471,13 @@ fn show_impl(
     if view.find.open {
         if view.find.recompute(model) {
             out.find_changed = true;
-            if let Some(r) = view.find.current() {
+            if let Some(r) = view.find.current_in(model) {
                 view.reveal(model, r, rect);
             }
         }
-    } else if !view.find.matches.is_empty() {
+    } else if !view.find.matches.is_empty() || !view.find.instance_hits.is_empty() {
         view.find.matches.clear();
+        view.find.instance_hits.clear();
         view.find.last_key = None;
     }
 
@@ -470,10 +500,12 @@ fn show_impl(
     }
     if view.find.active() {
         overlays.matches = view.find.matches.iter().map(|m| m.target).collect();
-        overlays.current_match = view.find.current();
+        overlays.instance_matches = view.find.instance_match_refs(model);
+        overlays.current_match = view.find.current_in(model);
         overlays.dim_unmatched = true;
     } else {
         overlays.matches.clear();
+        overlays.instance_matches.clear();
         overlays.current_match = None;
         overlays.dim_unmatched = false;
     }
@@ -712,77 +744,103 @@ fn find_bar(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &DiagramS
     if !view.find.open {
         return;
     }
-    let bar = Rect::from_min_size(rect.min + Vec2::new(12.0, 10.0), Vec2::new(rect.width().min(560.0) - 24.0, 34.0));
+    let width = (rect.width() - 24.0).clamp(260.0, 640.0);
+    let bar = Rect::from_min_size(rect.min + Vec2::new(12.0, 10.0), Vec2::new(width, 64.0));
     let id = view.id.with("find");
     let mut close = false;
     let mut go = 0i32;
-    ui.scope_builder(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
-        egui::Frame::new().fill(ui.visuals().window_fill).stroke(ui.visuals().window_stroke).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
-            ui.set_min_width(bar.width());
-            ui.label(egui::RichText::new("🔍").strong());
-            let edit = egui::TextEdit::singleline(&mut view.find.query).id(id).hint_text("Find element: name, id, type, expression…").desired_width(220.0).frame(egui::Frame::NONE);
-            let resp = ui.add(edit);
-            if view.find.want_focus {
-                resp.request_focus();
-                view.find.want_focus = false;
-            }
-            if resp.has_focus() {
-                ui.input_mut(|i| {
-                    if i.consume_key(Modifiers::NONE, Key::Escape) {
+    let targets = view.find.targets(model);
+    let n_total = targets.len();
+    ui.scope_builder(egui::UiBuilder::new().max_rect(bar).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
+        egui::Frame::new().fill(ui.visuals().window_fill).stroke(ui.visuals().window_stroke).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(8, 5)).show(ui, |ui| {
+            ui.set_width(width - 16.0);
+            // row 1: input · counter · prev/next · close
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("🔍").strong());
+                let edit_w = (ui.available_width() - 190.0).max(80.0);
+                let edit = egui::TextEdit::singleline(&mut view.find.query).id(id).hint_text("Find element, business key or instance id…").desired_width(edit_w).frame(egui::Frame::NONE);
+                let resp = ui.add(edit);
+                if view.find.want_focus {
+                    resp.request_focus();
+                    view.find.want_focus = false;
+                }
+                if resp.has_focus() {
+                    ui.input_mut(|i| {
+                        if i.consume_key(Modifiers::NONE, Key::Escape) {
+                            close = true;
+                        }
+                        if i.consume_key(Modifiers::SHIFT, Key::Enter) {
+                            go = -1;
+                        } else if i.consume_key(Modifiers::NONE, Key::Enter) {
+                            go = 1;
+                        }
+                        if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
+                            go = 1;
+                        }
+                        if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
+                            go = -1;
+                        }
+                    });
+                }
+                let count = if view.find.query.trim().is_empty() {
+                    String::new()
+                } else if n_total == 0 && !view.find.instance_hits_loading {
+                    "no matches".to_string()
+                } else {
+                    format!("{} / {}", (view.find.cursor + 1).min(n_total.max(1)), n_total)
+                };
+                let count_color = if n_total == 0 && !view.find.query.trim().is_empty() && !view.find.instance_hits_loading { style.incident } else { ui.visuals().weak_text_color() };
+                ui.add_sized([70.0, 20.0], egui::Label::new(egui::RichText::new(count).color(count_color)));
+                if ui.small_button("▲").on_hover_text("Previous match (Shift+Enter)").clicked() {
+                    go = -1;
+                }
+                if ui.small_button("▼").on_hover_text("Next match (Enter)").clicked() {
+                    go = 1;
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("✕").on_hover_text("Close (Esc)").clicked() {
                         close = true;
                     }
-                    if i.consume_key(Modifiers::SHIFT, Key::Enter) {
-                        go = -1;
-                    } else if i.consume_key(Modifiers::NONE, Key::Enter) {
-                        go = 1;
-                    }
-                    if i.consume_key(Modifiers::NONE, Key::ArrowDown) {
-                        go = 1;
-                    }
-                    if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
-                        go = -1;
-                    }
                 });
-            }
-            let n = view.find.matches.len();
-            let count = if view.find.query.trim().is_empty() {
-                String::new()
-            } else if n == 0 {
-                "no matches".to_string()
-            } else {
-                format!("{} / {}", view.find.cursor + 1, n)
-            };
-            ui.add_sized([80.0, 20.0], egui::Label::new(egui::RichText::new(count).color(if n == 0 && !view.find.query.trim().is_empty() { style.incident } else { ui.visuals().weak_text_color() })));
-            if ui.small_button("▲").on_hover_text("Previous match (Shift+Enter)").clicked() {
-                go = -1;
-            }
-            if ui.small_button("▼").on_hover_text("Next match (Enter)").clicked() {
-                go = 1;
-            }
-            ui.separator();
-            ui.toggle_value(&mut view.find.case_sensitive, "Aa").on_hover_text("Case sensitive");
-            ui.toggle_value(&mut view.find.include_flows, "⟶").on_hover_text("Include sequence flows");
-            for (cat, label) in [("task", "task"), ("gateway", "gw"), ("event", "ev"), ("call", "call"), ("subprocess", "sub")] {
-                let mut on = view.find.categories.iter().any(|c| c == cat);
-                if ui.toggle_value(&mut on, label).on_hover_text(format!("Only {label}s")).changed() {
-                    if on {
-                        view.find.categories.push(cat.to_string());
-                    } else {
-                        view.find.categories.retain(|c| c != cat);
+            });
+            // row 2: options and what matched
+            ui.horizontal_wrapped(|ui| {
+                ui.toggle_value(&mut view.find.case_sensitive, "Aa").on_hover_text("Case sensitive");
+                ui.toggle_value(&mut view.find.include_flows, "⟶").on_hover_text("Include sequence flows");
+                for (cat, label) in [("task", "task"), ("gateway", "gw"), ("event", "ev"), ("call", "call"), ("subprocess", "sub")] {
+                    let mut on = view.find.categories.iter().any(|c| c == cat);
+                    if ui.toggle_value(&mut on, label).on_hover_text(format!("Only {label}s")).changed() {
+                        if on {
+                            view.find.categories.push(cat.to_string());
+                        } else {
+                            view.find.categories.retain(|c| c != cat);
+                        }
                     }
                 }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("✕").on_hover_text("Close (Esc)").clicked() {
-                    close = true;
+                if view.find.instances_enabled && !view.find.query.trim().is_empty() {
+                    ui.separator();
+                    let n_el = view.find.matches.len();
+                    let n_inst = view.find.instance_hits.len();
+                    let n_act = n_total.saturating_sub(n_el);
+                    let mut txt = format!("{n_el} element{}", if n_el == 1 { "" } else { "s" });
+                    if view.find.instance_hits_loading {
+                        txt.push_str(" · searching instances…");
+                    } else if n_inst > 0 {
+                        txt.push_str(&format!(" · {n_inst} instance{} at {n_act} activit{}", if n_inst == 1 { "" } else { "s" }, if n_act == 1 { "y" } else { "ies" }));
+                    }
+                    ui.label(egui::RichText::new(txt).weak().small());
+                    if n_inst > 0 {
+                        let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+                        ui.painter().circle_filled(r.center(), 4.0, style.external);
+                        ui.label(egui::RichText::new("instance match").weak().small());
+                    }
                 }
             });
         });
     });
-    if go != 0 && !view.find.matches.is_empty() {
-        let n = view.find.matches.len() as i32;
-        view.find.cursor = ((view.find.cursor as i32 + go).rem_euclid(n)) as usize;
-        if let Some(r) = view.find.current() {
+    if go != 0 && n_total > 0 {
+        view.find.cursor = ((view.find.cursor as i32 + go).rem_euclid(n_total as i32)) as usize;
+        if let Some(r) = targets.get(view.find.cursor).copied() {
             view.reveal(model, r, rect);
             view.select(Some(r));
             out.selection_changed = true;

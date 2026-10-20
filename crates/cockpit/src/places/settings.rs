@@ -134,6 +134,16 @@ impl SettingsPlace {
                         ui.label(RichText::new(crate::platform::describe()).weak().small());
                     });
                 });
+                section(ui, "s-find", "Find in diagram (Ctrl+F)", true, |ui| {
+                    dirty |= ui.checkbox(&mut app.settings.find_instances, "Also search running instances and highlight the activities they wait at").changed();
+                    ui.add_enabled_ui(app.settings.find_instances, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_space(20.0);
+                            dirty |= ui.checkbox(&mut app.settings.find_business_keys, "by business key (contains)").changed();
+                            dirty |= ui.checkbox(&mut app.settings.find_ids, "by process instance id (contains)").changed();
+                        });
+                    });
+                });
                 section(ui, "s-refresh", "Refresh", true, |ui| {
                     egui::Grid::new("refresh-grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                         ui.label("Instance views (seconds)");

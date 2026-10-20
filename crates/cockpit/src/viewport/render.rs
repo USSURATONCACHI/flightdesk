@@ -58,6 +58,8 @@ pub struct Overlays {
     /// Heat 0..1 per activity id.
     pub heat: HashMap<String, f32>,
     pub matches: HashSet<Ref>,
+    /// Elements where a *running instance* matched the find query (business key / id).
+    pub instance_matches: HashSet<Ref>,
     pub current_match: Option<Ref>,
     /// When true, everything not matched is dimmed.
     pub dim_unmatched: bool,
@@ -146,7 +148,7 @@ impl<'a> Renderer<'a> {
     }
 
     fn alpha_for(&self, r: Ref) -> f32 {
-        if self.overlays.dim_unmatched && !self.overlays.matches.contains(&r) {
+        if self.overlays.dim_unmatched && !self.overlays.matches.contains(&r) && !self.overlays.instance_matches.contains(&r) {
             0.22
         } else {
             1.0
@@ -597,8 +599,18 @@ impl<'a> Renderer<'a> {
         } else if self.overlays.related.contains(&rref) {
             ring = Some((st.hover.gamma_multiply(0.6), 2.0));
         }
-        if self.overlays.matches.contains(&rref) {
-            let cur = self.overlays.current_match == Some(rref);
+        let el_match = self.overlays.matches.contains(&rref);
+        let inst_match = self.overlays.instance_matches.contains(&rref);
+        let cur = self.overlays.current_match == Some(rref);
+        if el_match && inst_match {
+            // Both the element and a running instance on it match: alternating stripes.
+            let w = if cur { 6.0 } else { 5.0 };
+            let (a, b) = (if cur { st.current_match } else { st.matched }, st.external);
+            self.striped_ring(e, r, w, a, b);
+            ring = None;
+        } else if inst_match {
+            ring = Some((if cur { st.current_match } else { st.external }, if cur { 4.0 } else { 2.5 }));
+        } else if el_match {
             ring = Some((if cur { st.current_match } else { st.matched }, if cur { 4.0 } else { 2.5 }));
         }
         if let Some((color, w)) = ring {
@@ -661,6 +673,48 @@ impl<'a> Renderer<'a> {
         self.painter.rect_filled(rect, 9.0, color);
         self.painter.galley(rect.center() - galley.size() / 2.0, galley, self.style.badge_text);
         rect
+    }
+
+    /// Highlight ring in two alternating colours: diagonal hatching on rectangular elements,
+    /// alternating arcs on circles and diamonds.
+    fn striped_ring(&self, e: &Element, r: Rect, w: f32, a: Color32, b: Color32) {
+        let pad = w + 2.0;
+        if e.kind.is_event() {
+            let c = r.center();
+            let rad = r.width() / 2.0 + pad;
+            self.painter.circle_stroke(c, rad, Stroke::new(w, a));
+            let pts: Vec<Pos2> = (0..=96).map(|i| c + Vec2::angled(std::f32::consts::TAU * i as f32 / 96.0) * rad).collect();
+            self.painter.add(Shape::dashed_line(&pts, Stroke::new(w, b), 7.0, 7.0));
+        } else if e.kind.is_gateway() {
+            let rr = r.expand(pad);
+            let c = rr.center();
+            let pts = vec![Pos2::new(c.x, rr.min.y), Pos2::new(rr.max.x, c.y), Pos2::new(c.x, rr.max.y), Pos2::new(rr.min.x, c.y), Pos2::new(c.x, rr.min.y)];
+            self.painter.add(Shape::line(pts.clone(), PathStroke::from(Stroke::new(w, a))));
+            self.painter.add(Shape::dashed_line(&pts, Stroke::new(w, b), 7.0, 7.0));
+        } else {
+            let rr = r.expand(pad);
+            let cr = self.px(10.0) + pad;
+            self.painter.rect_stroke(rr, cr, Stroke::new(w, a), StrokeKind::Middle);
+            // Diagonal hatch in colour b, clipped to the four border strips of the ring.
+            let outer = rr.expand(w / 2.0);
+            let inner = rr.shrink(w / 2.0);
+            let strips = [
+                Rect::from_min_max(outer.min, Pos2::new(outer.max.x, inner.min.y)),
+                Rect::from_min_max(Pos2::new(outer.min.x, inner.max.y), outer.max),
+                Rect::from_min_max(outer.min, Pos2::new(inner.min.x, outer.max.y)),
+                Rect::from_min_max(Pos2::new(inner.max.x, outer.min.y), outer.max),
+            ];
+            let spacing = 9.0;
+            let h = outer.height();
+            for strip in strips {
+                let p = self.painter.with_clip_rect(strip.intersect(self.painter.clip_rect()));
+                let mut x = outer.min.x - h;
+                while x < outer.max.x {
+                    p.line_segment([Pos2::new(x, outer.min.y), Pos2::new(x + h, outer.max.y)], Stroke::new(w * 0.9, b));
+                    x += spacing;
+                }
+            }
+        }
     }
 
     // ---------- primitives ----------

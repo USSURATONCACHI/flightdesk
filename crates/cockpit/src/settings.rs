@@ -65,6 +65,10 @@ pub struct Settings {
     pub mcp_enabled: bool,
     pub mcp_port: u16,
     pub mcp_token: String,
+    /// Ctrl+F also looks for running instances (by business key / id) and highlights their activities.
+    pub find_instances: bool,
+    pub find_business_keys: bool,
+    pub find_ids: bool,
 }
 
 impl Default for Settings {
@@ -89,6 +93,9 @@ impl Default for Settings {
             mcp_enabled: false,
             mcp_port: 7788,
             mcp_token: String::new(),
+            find_instances: true,
+            find_business_keys: true,
+            find_ids: true,
         }
     }
 }

@@ -32,3 +32,40 @@ pub fn infer_traversed_flows(m: &bpmn::Model, history: &[HistoricActivityInstanc
     }
     out
 }
+
+/// One running instance that matched a find query, attached to the activity it waits at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InstanceHit {
+    pub process_instance_id: String,
+    pub business_key: Option<String>,
+    pub activity_id: String,
+}
+
+/// Which instance fields Ctrl+F may match.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FindInstanceOptions {
+    pub business_keys: bool,
+    pub ids: bool,
+}
+
+/// Join running activity instances with a find query: an instance matches when its id contains
+/// the query (case-insensitive) or it is in `by_business_key` (instances the engine returned for a
+/// business-key search). Multi-instance bodies are skipped; results are grouped per activity.
+pub fn instance_hits(unfinished: &[HistoricActivityInstance], by_business_key: &[camunda::ProcessInstance], query: &str, opts: FindInstanceOptions) -> Vec<InstanceHit> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() || !(opts.business_keys || opts.ids) {
+        return vec![];
+    }
+    let keys: std::collections::HashMap<&str, Option<&str>> = by_business_key.iter().map(|p| (p.id.as_str(), p.business_key.as_deref())).collect();
+    let mut out = vec![];
+    for a in unfinished.iter().filter(|a| !a.is_multi_instance_body()) {
+        let id_match = opts.ids && a.process_instance_id.to_lowercase().contains(&q);
+        let bk = if opts.business_keys { keys.get(a.process_instance_id.as_str()) } else { None };
+        if id_match || bk.is_some() {
+            out.push(InstanceHit { process_instance_id: a.process_instance_id.clone(), business_key: bk.copied().flatten().map(String::from), activity_id: a.base_activity_id().to_string() });
+        }
+    }
+    out.sort_by(|x, y| (&x.activity_id, &x.process_instance_id).cmp(&(&y.activity_id, &y.process_instance_id)));
+    out.dedup();
+    out
+}

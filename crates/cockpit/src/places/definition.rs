@@ -5,7 +5,7 @@ use crate::inspector::{self, InspectorAction, RuntimeFacts};
 use crate::net::Loader;
 use crate::state::{Nav, NavMode};
 use crate::viewport::{self, BadgeKind, DiagramView, Overlays};
-use crate::widgets::{badge, cell, filter_box, loader_status_inline, pill, progress_line, state_color, state_label, table_area};
+use crate::widgets::{badge, cell, filter_box, id_cell, loader_status_inline, pill, progress_line, state_color, state_label, table_area};
 use camunda::{ActivityStatistics, HistoricProcessInstance, HistoricProcessInstanceQuery, Incident, ProcessDefinition};
 use egui::{Key, Modifiers, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -31,6 +31,10 @@ pub struct DefinitionPlace {
     pub page: usize,
     seen_epoch: u64,
     instances_key: String,
+    /// Running instances matching the find query (business key / id), per activity.
+    find_hits: Loader<Vec<crate::history::InstanceHit>>,
+    find_key: String,
+    find_changed_at: Option<std::time::Instant>,
 }
 
 pub const DOCK_TABS: [&str; 4] = ["Inspector", "Instances", "Incidents", "Versions"];
@@ -56,6 +60,9 @@ impl DefinitionPlace {
             page: 0,
             seen_epoch: 0,
             instances_key: String::new(),
+            find_hits: Loader::default(),
+            find_key: String::new(),
+            find_changed_at: None,
         }
     }
 
@@ -128,6 +135,48 @@ impl DefinitionPlace {
             net.fetch(&mut self.incidents, move |c| async move { c.incidents(&[("processDefinitionId", id2)]).await });
         }
         self.incidents.poll();
+        self.poll_find_instances(app);
+    }
+
+    /// Ctrl+F instance search: debounced, one pass over the definition's running activity
+    /// instances plus a business-key query, joined client-side.
+    fn poll_find_instances(&mut self, app: &App) {
+        let enabled = app.settings.find_instances && (app.settings.find_business_keys || app.settings.find_ids);
+        self.view.find.instances_enabled = enabled;
+        let query = self.view.find.query.trim().to_string();
+        if !enabled || !self.view.find.open || query.len() < 2 {
+            if !self.view.find.instance_hits.is_empty() {
+                self.view.find.instance_hits.clear();
+            }
+            self.view.find.instance_hits_loading = false;
+            self.find_key.clear();
+            return;
+        }
+        let key = format!("{}|{}|{}|{}", self.def_id, query, app.settings.find_business_keys, app.settings.find_ids);
+        if key != self.find_key {
+            self.find_key = key;
+            self.find_changed_at = Some(std::time::Instant::now());
+            self.view.find.instance_hits_loading = true;
+        }
+        if let (Some(t), Some(net)) = (self.find_changed_at, app.net.as_ref()) {
+            if t.elapsed() >= Duration::from_millis(250) {
+                self.find_changed_at = None;
+                let def = self.def_id.clone();
+                let opts = crate::history::FindInstanceOptions { business_keys: app.settings.find_business_keys, ids: app.settings.find_ids };
+                let q = query.clone();
+                net.fetch(&mut self.find_hits, move |c| async move {
+                    let acts = c.unfinished_activity_instances(&def).await?;
+                    let by_key = if opts.business_keys { c.instances_by_business_key_fragment(&def, &q).await.unwrap_or_default() } else { vec![] };
+                    Ok(crate::history::instance_hits(&acts, &by_key, &q, opts))
+                });
+            } else if let Some(ctx) = &app.ctx {
+                ctx.request_repaint_after(Duration::from_millis(60));
+            }
+        }
+        if self.find_hits.poll() {
+            self.view.find.instance_hits = self.find_hits.data.clone().unwrap_or_default();
+        }
+        self.view.find.instance_hits_loading = self.find_changed_at.is_some() || self.find_hits.is_loading();
     }
 
     fn instance_query(&self, app: &App) -> HistoricProcessInstanceQuery {
@@ -342,7 +391,13 @@ impl DefinitionPlace {
             }
             if let Some(bpmn::Ref::Element(i)) = out.enter_pressed {
                 let e = &model.elements[i];
-                if e.kind == bpmn::ElementKind::CallActivity {
+                let instance_hit = self.view.find.active() && self.view.find.instance_hits.iter().any(|h| h.activity_id == e.id);
+                if instance_hit {
+                    self.activity_filter = Some(e.id.clone());
+                    self.instance_filter.clear();
+                    self.dock_tab = 1;
+                    app.dock_visible = true;
+                } else if e.kind == bpmn::ElementKind::CallActivity {
                     if let Some(k) = e.attr("calledElement") {
                         if !k.contains("${") {
                             app.navigate(Nav::DefinitionKey { key: k.to_string() }, NavMode::Here);
@@ -448,6 +503,7 @@ impl DefinitionPlace {
         table_area(ui, ("inst-table", &self.def_id), 460.0, |ui| {
         TableBuilder::new(ui)
             .striped(true)
+            .resizable(true)
             .sense(egui::Sense::click())
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
             .column(Column::initial(140.0).at_least(80.0))
@@ -468,14 +524,19 @@ impl DefinitionPlace {
                     let i = row.index();
                     let r = &rows[i];
                     row.set_selected(i == self.row_cursor);
-                    row.col(|ui| {
-                        cell(ui, RichText::new(r.business_key.clone().unwrap_or_else(|| "—".into())).size(12.0));
+                    row.col(|ui| match &r.business_key {
+                        Some(bk) => {
+                            id_cell(ui, bk, bk);
+                        }
+                        None => {
+                            cell(ui, RichText::new("—").weak().size(12.0));
+                        }
                     });
                     row.col(|ui| {
                         cell(ui, RichText::new(r.start_time.as_deref().map(crate::util::fmt_local_short).unwrap_or_default()).size(12.0)).on_hover_text(r.start_time.as_deref().map(crate::util::fmt_local).unwrap_or_default());
                     });
                     row.col(|ui| {
-                        cell(ui, RichText::new(crate::util::short_uuid(&r.id)).monospace().size(11.5)).on_hover_text(&r.id);
+                        id_cell(ui, &r.id, &crate::util::short_uuid(&r.id));
                     });
                     row.col(|ui| {
                         let st = r.state.as_deref().unwrap_or("ACTIVE");

@@ -1017,9 +1017,7 @@ impl InstancePlace {
                                 delete = Some((v.name.clone(), v.execution_id.clone().unwrap_or_default()));
                             }
                         }
-                        if ui.add(egui::Button::new("⎘").small().frame(false)).on_hover_text("Copy value").clicked() {
-                            ui.ctx().copy_text(edit_text(v));
-                        }
+                        crate::widgets::copy_button(ui, &edit_text(v));
                     });
                 });
                 if !expanded {

@@ -4,7 +4,7 @@ use crate::app::App;
 use crate::net::Loader;
 use crate::query::{self, Mode, Query};
 use crate::state::{Nav, NavMode};
-use crate::widgets::{cell, heading_row, loader_status_inline, pill, progress_line, state_color, state_label, table_area, Confirm, ToastKind};
+use crate::widgets::{cell, heading_row, id_cell, loader_status_inline, pill, progress_line, state_color, state_label, table_area, Confirm, ToastKind};
 use camunda::{HistoricProcessInstance, VariableInstance};
 use egui::{Key, Modifiers, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -591,11 +591,16 @@ impl SearchPlace {
                                 toggle = Some(r.id.clone());
                             }
                         });
-                        row.col(|ui| {
-                            cell(ui, RichText::new(r.business_key.clone().unwrap_or_else(|| "—".into())).size(12.0));
+                        row.col(|ui| match &r.business_key {
+                            Some(bk) => {
+                                id_cell(ui, bk, bk);
+                            }
+                            None => {
+                                cell(ui, RichText::new("—").weak().size(12.0));
+                            }
                         });
                         row.col(|ui| {
-                            cell(ui, RichText::new(crate::util::short_uuid(&r.id)).monospace().size(11.5)).on_hover_text(&r.id);
+                            id_cell(ui, &r.id, &crate::util::short_uuid(&r.id));
                         });
                         row.col(|ui| {
                             cell(ui, RichText::new(format!("{} v{}", r.definition_key, r.version.unwrap_or(0))).size(12.0));

@@ -3,7 +3,7 @@
 use crate::app::App;
 use crate::net::Loader;
 use crate::state::{Nav, NavMode};
-use crate::widgets::{cell, filter_box, heading_row, loader_status_inline, pill, progress_line, table_area};
+use crate::widgets::{cell, filter_box, heading_row, id_cell, loader_status_inline, pill, progress_line, table_area};
 use camunda::Incident;
 use egui::{Key, Modifiers, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -166,7 +166,7 @@ impl IncidentsPlace {
                         });
                         row.col(|ui| {
                             if let Some(pi) = &inc.process_instance_id {
-                                ui.label(RichText::new(crate::util::short_uuid(pi)).monospace().size(11.5)).on_hover_text(pi);
+                                id_cell(ui, pi, &crate::util::short_uuid(pi));
                             }
                         });
                         row.col(|ui| {
