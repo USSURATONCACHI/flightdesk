@@ -2,7 +2,6 @@
 
 use crate::theme::ThemeMode;
 use serde::{Deserialize, Serialize};
-use serde::de::Deserialize as _;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
