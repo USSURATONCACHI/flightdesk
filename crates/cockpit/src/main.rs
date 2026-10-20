@@ -126,6 +126,7 @@ fn main() -> eframe::Result<()> {
         "Flightdeck",
         options,
         Box::new(move |cc| {
+            cockpit::platform::init(cc, cc);
             let mut app = app::App::new(&cc.egui_ctx, settings, args.scale);
             if theme_override.is_some() {
                 app.theme_override = theme_override;

@@ -78,7 +78,7 @@ fn specs_vec() -> Vec<Spec> {
         s("ui_screenshot", "Screenshot of the window as PNG (returned as image; also saved to path if given). max_width downsizes to save tokens.", obj(json!({"path": {"type": "string"}, "max_width": {"type": "integer", "default": 1280}}), &[])),
         s("ui_confirm", "Accept or cancel the pending confirmation dialog.", obj(json!({"accept": {"type": "boolean"}}), &["accept"])),
         s("ui_modification_queue", "Read or edit the Modify tab of the open instance: list | add (instruction) | clear | apply.", obj(json!({"action": {"type": "string", "enum": ["list", "add", "clear", "apply"]}, "instruction": {"type": "object"}}), &["action"])),
-        s("ui_settings", "Read or change settings: theme (system|light|dark), density, wheel_zooms, inertia, refresh_instance_secs, refresh_list_secs, page_size, paused.", obj(json!({"set": {"type": "object"}}), &[])),
+        s("ui_settings", "Read or change settings: theme (system|light|dark), density, wheel_zooms, inertia, pointer_wrap (auto|off), refresh_instance_secs, refresh_list_secs, page_size, paused.", obj(json!({"set": {"type": "object"}}), &[])),
         s("ui_connect", "Connect to an engine (URL, user, password) or disconnect.", obj(json!({"url": {"type": "string"}, "user": {"type": "string"}, "password": {"type": "string"}, "disconnect": {"type": "boolean"}}), &[])),
     ]
 }
@@ -365,6 +365,7 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 let st = app.mcp.as_ref().map(|m| m.stats.lock().unwrap().clone());
                 Ok(Some(json!({
                     "connected": app.net.is_some(), "status": format!("{:?}", app.conn), "url": app.profile.url, "user": app.profile.user,
+                    "platform": crate::platform::describe(), "pointer_warp_supported": crate::platform::warp_supported(),
                     "latency_ms": app.latency_ms, "auto_refresh_paused": app.paused, "tabs": app.tabs.len(),
                     "mcp": st.map(|s| json!({"requests": s.requests, "tool_calls": s.tool_calls, "errors": s.errors, "last_tool": s.last_tool})),
                 })))
@@ -1155,6 +1156,12 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                             }
                             "wheel_zooms" => app.settings.wheel_zooms = v.as_bool().unwrap_or(true),
                             "inertia" => app.settings.inertia = v.as_bool().unwrap_or(true),
+                            "pointer_wrap" => {
+                                app.settings.pointer_wrap = match v.as_str().unwrap_or("auto") {
+                                    "off" => crate::viewport::WrapMode::Off,
+                                    _ => crate::viewport::WrapMode::Auto,
+                                }
+                            }
                             "refresh_instance_secs" => app.settings.refresh_instance_secs = v.as_u64().unwrap_or(5),
                             "refresh_list_secs" => app.settings.refresh_list_secs = v.as_u64().unwrap_or(10),
                             "page_size" => app.settings.page_size = v.as_u64().unwrap_or(100) as usize,
@@ -1164,7 +1171,7 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                     }
                     app.settings_dirty = true;
                 }
-                Ok(Some(json!({"theme": format!("{:?}", app.settings.theme), "density": app.settings.density, "wheel_zooms": app.settings.wheel_zooms, "inertia": app.settings.inertia, "refresh_instance_secs": app.settings.refresh_instance_secs, "refresh_list_secs": app.settings.refresh_list_secs, "page_size": app.settings.page_size, "paused": app.paused, "mcp_port": app.settings.mcp_port})))
+                Ok(Some(json!({"theme": format!("{:?}", app.settings.theme), "density": app.settings.density, "wheel_zooms": app.settings.wheel_zooms, "inertia": app.settings.inertia, "pointer_wrap": format!("{:?}", app.settings.pointer_wrap), "refresh_instance_secs": app.settings.refresh_instance_secs, "refresh_list_secs": app.settings.refresh_list_secs, "page_size": app.settings.page_size, "paused": app.paused, "mcp_port": app.settings.mcp_port})))
             }
             "ui_connect" => {
                 if arg_bool(&a, "disconnect") == Some(true) {

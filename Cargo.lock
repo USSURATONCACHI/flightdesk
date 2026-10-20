@@ -485,12 +485,16 @@ dependencies = [
  "env_logger",
  "image",
  "log",
+ "raw-window-handle",
  "reqwest",
  "serde",
  "serde_json",
  "tiny_http",
  "tokio",
  "toml 0.8.23",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-protocols",
 ]
 
 [[package]]

@@ -120,6 +120,20 @@ impl SettingsPlace {
                         }
                     });
                     dirty |= ui.checkbox(&mut app.settings.inertia, "Inertia after flicking the diagram").changed();
+                    ui.horizontal(|ui| {
+                        ui.label("Unlimited drag");
+                        use crate::viewport::WrapMode;
+                        let supported = crate::platform::warp_supported();
+                        for (m, l, tip) in [(WrapMode::Auto, "On", "Teleport the pointer to the opposite edge when a drag reaches the view border"), (WrapMode::Off, "Off", "Drags stop at the edge")] {
+                            let enabled = supported || m == WrapMode::Off;
+                            let r = ui.add_enabled_ui(enabled, |ui| ui.selectable_label(app.settings.pointer_wrap == m, l)).inner.on_hover_text(tip);
+                            if r.clicked() {
+                                app.settings.pointer_wrap = m;
+                                dirty = true;
+                            }
+                        }
+                        ui.label(RichText::new(crate::platform::describe()).weak().small());
+                    });
                 });
                 section(ui, "s-refresh", "Refresh", true, |ui| {
                     egui::Grid::new("refresh-grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {

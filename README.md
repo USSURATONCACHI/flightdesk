@@ -72,6 +72,9 @@ Other flags: `--open def:<key> | instance:<id> | search:<query> | definitions | 
 `--dock N`, `--theme light|dark`, `--scale 1.25`, `--size 1600x1000`, `--screenshot out.png`,
 `--stats`, `--no-focus`, `--mcp`, `--mcp-port N`.
 
+Unlimited drags move the real cursor: through winit on X11, Windows and macOS, and through the
+`wp_pointer_warp_v1` protocol on Wayland (KWin 6.4+). Compositors without it keep ordinary drags.
+
 Environment: `FLIGHTDECK_NO_FOCUS=1` opens the window without taking focus;
 `FLIGHTDECK_WINDOW_POS=x,y` sets the initial position (not on Wayland — `scripts/shot.sh`
 uses Xwayland to place test windows on the second monitor).
@@ -81,7 +84,8 @@ uses Xwayland to place test windows on the second monitor).
 | Keys | Action |
 |---|---|
 | Wheel / pinch, Shift+wheel | zoom at cursor, pan horizontally |
-| Drag, middle-drag, Space+drag | pan (flick for inertia; hold Alt to pan twice as fast) |
+| Drag, middle-drag, Space+drag | pan (flick for inertia; hold Alt to pan twice as fast; the pointer wraps at the view edge so a drag never runs out of room) |
+| Zoom dial (bottom left) | drag left/right to zoom without limit; wheel over it zooms too |
 | ↑↓←→ · WASD · HJKL | pan (hold to accelerate, Shift faster) |
 | `+` `−` · `0` · `1` · `F` · `Shift+F` | zoom · fit all · 100 % · fit selection · fit tokens |
 | Tab / Shift+Tab, Alt+→ / Alt+← | next element along the flow · follow outgoing/incoming flow |

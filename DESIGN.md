@@ -196,6 +196,8 @@ the animation. Repaint is requested while `|current − target| > ε`.
 | Hover (120 ms) | Highlight element + its flows; tooltip: name, id, type, running/incident counts, timer due, assignee |
 | Wheel | Zoom (default). Setting *Wheel pans* flips: wheel pans, Ctrl+wheel zooms. Shift+wheel always pans horizontally |
 | Drag on minimap | Move viewport |
+| Drag reaching the view edge | The pointer is teleported to the opposite edge and the drag continues (torus). Platform capability detected from raw-window-handle: winit on X11/Windows/macOS, `wp_pointer_warp_v1` on Wayland; unavailable → ordinary drag |
+| Zoom dial (next to the zoom %) | Scrub left/right to zoom continuously; one octave per 96 px; wraps the pointer too |
 
 Cursor shapes: grab/grabbing while panning, pointer over elements, crosshair in
 "pick target" mode (modification).

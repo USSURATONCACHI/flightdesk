@@ -13,6 +13,8 @@ pub struct DiagramSettings {
     /// true: wheel zooms (Ctrl+wheel pans); false: wheel pans (Ctrl+wheel zooms).
     pub wheel_zooms: bool,
     pub inertia: bool,
+    /// Unlimited drags: teleport or lock the pointer at the view edge.
+    pub wrap: super::wrap::WrapMode,
     pub pan_speed: f32,
     pub zoom_step: f32,
     pub hover_delay: f64,
@@ -20,7 +22,7 @@ pub struct DiagramSettings {
 
 impl Default for DiagramSettings {
     fn default() -> Self {
-        Self { wheel_zooms: true, inertia: true, pan_speed: 600.0, zoom_step: 1.25, hover_delay: 0.25 }
+        Self { wheel_zooms: true, inertia: true, wrap: Default::default(), pan_speed: 600.0, zoom_step: 1.25, hover_delay: 0.25 }
     }
 }
 
@@ -92,6 +94,9 @@ pub struct DiagramView {
     badges: Vec<BadgeHit>,
     /// Zoom-independent label layout cache.
     pub text: super::text::TextCache,
+    /// Pointer wrapping for canvas pans and for the zoom dial.
+    pan_wrap: super::wrap::PointerWrap,
+    dial_wrap: super::wrap::PointerWrap,
     /// Set by Shift+F; the owning place fits the camera to its tokens and clears it.
     pub fit_tokens_marker: bool,
     id: Id,
@@ -122,6 +127,8 @@ impl DiagramView {
             want_focus: true,
             badges: vec![],
             text: Default::default(),
+            pan_wrap: Default::default(),
+            dial_wrap: Default::default(),
             fit_tokens_marker: false,
             id,
         }
@@ -312,10 +319,13 @@ fn show_impl(
     let space_down = ctx.input(|i| i.key_down(Key::Space));
     let primary_drag = response.dragged_by(egui::PointerButton::Primary);
     let middle_drag = response.dragged_by(egui::PointerButton::Middle);
+    if response.drag_started() {
+        view.pan_wrap.begin(settings.wrap);
+    }
     if primary_drag || middle_drag {
         // Alt doubles the pan speed: the board moves twice as far as the cursor.
         let boost = if ctx.input(|i| i.modifiers.alt) { 2.0 } else { 1.0 };
-        let d = response.drag_delta() * boost;
+        let d = view.pan_wrap.delta(&ctx, response.drag_delta(), pointer, rect, (true, true)) * boost;
         view.camera.drag_screen(d);
         let dtt = (now - view.last_drag_time).max(1e-3) as f32;
         let v = -d / dtt;
@@ -323,6 +333,7 @@ fn show_impl(
         view.last_drag_time = now;
         ctx.set_cursor_icon(CursorIcon::Grabbing);
     } else if response.drag_stopped() {
+        view.pan_wrap.end();
         if settings.inertia && view.drag_velocity.length() > 150.0 && now - view.last_drag_time < 0.08 {
             view.camera.inertia = -view.drag_velocity.clamp(Vec2::splat(-6000.0), Vec2::splat(6000.0));
         }
@@ -496,7 +507,7 @@ fn show_impl(
     if view.show_minimap {
         minimap(ui, view, model, overlays, style, rect);
     }
-    zoom_indicator(ui, view, model, rect, style);
+    zoom_indicator(ui, view, model, rect, style, settings);
     if let Some(h) = view.hover {
         if now - view.hover_since >= settings.hover_delay && !response.dragged() && !ctx.input(|i| i.pointer.any_down()) {
             tooltip(ui, view, model, overlays, h, tooltip_extra);
@@ -834,7 +845,7 @@ fn minimap(ui: &mut Ui, view: &mut DiagramView, model: &Model, overlays: &Overla
     }
 }
 
-fn zoom_indicator(ui: &mut Ui, view: &mut DiagramView, model: &Model, rect: Rect, style: &DiagramStyle) {
+fn zoom_indicator(ui: &mut Ui, view: &mut DiagramView, model: &Model, rect: Rect, style: &DiagramStyle, settings: &DiagramSettings) {
     let txt = format!("{:.0}%", view.camera.target.zoom * 100.0);
     let r = Rect::from_min_size(Pos2::new(rect.min.x + 12.0, rect.max.y - 34.0), Vec2::new(64.0, 22.0));
     ui.scope_builder(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
@@ -862,8 +873,59 @@ fn zoom_indicator(ui: &mut Ui, view: &mut DiagramView, model: &Model, rect: Rect
             ui.checkbox(&mut view.show_grid, "Grid           G");
             ui.checkbox(&mut view.show_ids, "Element ids    I");
         });
-        let _ = style;
     });
+    zoom_dial(ui, view, Rect::from_min_size(Pos2::new(r.max.x + 6.0, r.min.y), Vec2::new(150.0, 22.0)), rect, style, settings);
+}
+
+/// A scrubbable dial: drag left/right to zoom continuously, without limit (the pointer wraps at
+/// the dial's edges). One octave of zoom is `PX_PER_OCTAVE` pixels of travel.
+fn zoom_dial(ui: &mut Ui, view: &mut DiagramView, dial: Rect, viewport: Rect, style: &DiagramStyle, settings: &DiagramSettings) {
+    const PX_PER_OCTAVE: f32 = 96.0;
+    let ctx = ui.ctx().clone();
+    let resp = ui.interact(dial, view.id.with("zoom-dial"), Sense::click_and_drag());
+    let anchor = viewport.center();
+    if resp.drag_started() {
+        view.dial_wrap.begin(settings.wrap);
+    }
+    if resp.dragged() {
+        let pointer = ctx.input(|i| i.pointer.hover_pos());
+        let d = view.dial_wrap.delta(&ctx, resp.drag_delta(), pointer, dial.expand2(Vec2::new(0.0, 40.0)), (true, false));
+        if d.x != 0.0 {
+            view.camera.zoom_by(viewport, (d.x / PX_PER_OCTAVE).exp2(), anchor);
+        }
+        ctx.set_cursor_icon(CursorIcon::ResizeHorizontal);
+    } else if resp.drag_stopped() {
+        view.dial_wrap.end();
+    }
+    if resp.hovered() {
+        ctx.set_cursor_icon(CursorIcon::ResizeHorizontal);
+        let scroll = ctx.input(|i| i.smooth_scroll_delta);
+        if scroll != Vec2::ZERO {
+            view.camera.zoom_by(viewport, ((scroll.x + scroll.y) / PX_PER_OCTAVE).exp2(), anchor);
+        }
+    }
+    resp.on_hover_text("Drag left or right to zoom, as far as you like");
+    // paint: a ruler that scrolls with log2(zoom)
+    let painter = ui.painter().with_clip_rect(dial);
+    let fill = ui.visuals().window_fill.gamma_multiply(0.9);
+    painter.rect(dial, 6.0, fill, ui.visuals().window_stroke, StrokeKind::Inside);
+    let tick_spacing = PX_PER_OCTAVE / 8.0;
+    let offset = view.camera.target.zoom.log2() * PX_PER_OCTAVE;
+    let cx = dial.center().x;
+    let first = ((dial.min.x - cx + offset) / tick_spacing).floor() as i32;
+    let last = ((dial.max.x - cx + offset) / tick_spacing).ceil() as i32;
+    let tick_color = style.text_muted.gamma_multiply(0.7);
+    for n in first..=last {
+        let x = cx + n as f32 * tick_spacing - offset;
+        if x < dial.min.x + 3.0 || x > dial.max.x - 3.0 {
+            continue;
+        }
+        let octave = n.rem_euclid(8) == 0;
+        let h = if octave { 10.0 } else if n.rem_euclid(4) == 0 { 7.0 } else { 4.0 };
+        let fade = 1.0 - ((x - cx).abs() / (dial.width() / 2.0)).powi(2) * 0.8;
+        painter.line_segment([Pos2::new(x, dial.center().y - h / 2.0), Pos2::new(x, dial.center().y + h / 2.0)], Stroke::new(1.0, tick_color.gamma_multiply(fade)));
+    }
+    painter.line_segment([Pos2::new(cx, dial.min.y + 3.0), Pos2::new(cx, dial.max.y - 3.0)], Stroke::new(2.0, style.selection));
 }
 
 fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, h: Ref, extra: TooltipExtra<'_>) {

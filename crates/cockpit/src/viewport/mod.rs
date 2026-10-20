@@ -4,6 +4,8 @@ pub mod icons;
 pub mod render;
 pub mod text;
 pub mod widget;
+pub mod wrap;
 
 pub use render::{BadgeKind, DiagramStyle, Overlays};
 pub use widget::{Diagram, DiagramSettings, DiagramView, PickMode};
+pub use wrap::{PointerWrap, WrapMode};

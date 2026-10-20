@@ -202,7 +202,7 @@ impl App {
     }
 
     pub fn diagram_settings(&self) -> DiagramSettings {
-        DiagramSettings { wheel_zooms: self.settings.wheel_zooms, inertia: self.settings.inertia, ..Default::default() }
+        DiagramSettings { wheel_zooms: self.settings.wheel_zooms, inertia: self.settings.inertia, wrap: self.settings.pointer_wrap, ..Default::default() }
     }
 
     pub fn auto_refresh_allowed(&self) -> bool {
@@ -772,6 +772,7 @@ impl App {
             self.apply_theme(ctx);
         }
         self.set_ctx(ctx);
+        crate::platform::pump();
         self.window_focused = ctx.input(|i| i.focused);
         if self.theme_mode() == ThemeMode::System && self.frame.is_multiple_of(60) && Self::wants_dark(ThemeMode::System, ctx) != self.tokens.dark {
             self.frame_theme_dirty = true;

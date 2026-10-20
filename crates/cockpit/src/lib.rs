@@ -8,6 +8,7 @@ pub mod inspector;
 pub mod mcp;
 pub mod net;
 pub mod places;
+pub mod platform;
 pub mod query;
 pub mod settings;
 pub mod state;
