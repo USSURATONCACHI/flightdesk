@@ -511,8 +511,7 @@ pub fn suggest(text: &str, caret: usize, ctx: &SuggestCtx) -> Vec<Suggestion> {
     let sep = tok.find(|c: char| [':', '=', '>', '<', '~', '!'].contains(&c));
     match sep {
         None => {
-            if tok.starts_with("var.") {
-                let prefix = &tok[4..];
+            if let Some(prefix) = tok.strip_prefix("var.") {
                 for v in ctx.variable_names.iter().filter(|v| v.to_lowercase().starts_with(&prefix.to_lowercase())).take(12) {
                     out.push(mk(format!("var.{v}"), "variable".into(), format!("var.{v}=")));
                 }

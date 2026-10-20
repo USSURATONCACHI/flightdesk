@@ -91,7 +91,7 @@ impl Cmd {
             Cmd::Refresh => CmdInfo { name: "Refresh now", shortcut: sc(Modifiers::NONE, Key::F5), keys_label: "F5 / R", category: "General" },
             Cmd::TogglePause => CmdInfo { name: "Pause / resume auto-refresh", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P), keys_label: "Ctrl+Shift+P", category: "General" },
             Cmd::ToggleDock => CmdInfo { name: "Toggle side dock", shortcut: sc(Modifiers::COMMAND, Key::B), keys_label: "Ctrl+B", category: "View" },
-            Cmd::ToggleTheme => CmdInfo { name: "Toggle light / dark theme", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::T), keys_label: "Ctrl+Shift+T", category: "View" },
+            Cmd::ToggleTheme => CmdInfo { name: "Cycle theme: system → light → dark", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::T), keys_label: "Ctrl+Shift+T", category: "View" },
             Cmd::FitDiagram => CmdInfo { name: "Fit diagram", shortcut: None, keys_label: "0", category: "Diagram" },
             Cmd::ZoomIn => CmdInfo { name: "Zoom in", shortcut: None, keys_label: "+", category: "Diagram" },
             Cmd::ZoomOut => CmdInfo { name: "Zoom out", shortcut: None, keys_label: "−", category: "Diagram" },
@@ -231,7 +231,7 @@ pub struct Palette {
 
 enum Item {
     Cmd(Cmd),
-    Nav(String, Nav),
+    Nav(Nav),
     Search(String),
 }
 
@@ -269,15 +269,15 @@ impl Palette {
                 for d in defs {
                     let hay = format!("{} {}", d.key, d.name.clone().unwrap_or_default()).to_lowercase();
                     if let Some(score) = fuzzy(&hay, &ql) {
-                        out.push((Item::Nav(format!("Open {}", d.display_name()), Nav::Definition { id: d.id.clone() }), format!("{}  ·  v{}", d.display_name(), d.version), d.key.clone(), score - 5));
+                        out.push((Item::Nav(Nav::Definition { id: d.id.clone() }), format!("{}  ·  v{}", d.display_name(), d.version), d.key.clone(), score - 5));
                     }
                 }
             }
             if crate::util::is_uuid(q) {
-                out.push((Item::Nav(format!("Open instance {q}"), Nav::Instance { id: q.to_string() }), format!("Open instance {}", crate::util::short_uuid(q)), "process instance id".into(), 1000));
-                out.push((Item::Nav(format!("Open definition {q}"), Nav::Definition { id: q.to_string() }), "Open as definition id".into(), String::new(), 990));
+                out.push((Item::Nav(Nav::Instance { id: q.to_string() }), format!("Open instance {}", crate::util::short_uuid(q)), "process instance id".into(), 1000));
+                out.push((Item::Nav(Nav::Definition { id: q.to_string() }), "Open as definition id".into(), String::new(), 990));
             } else if q.contains(':') && q.len() > 40 && !q.contains(' ') {
-                out.push((Item::Nav(format!("Open definition {q}"), Nav::Definition { id: q.to_string() }), format!("Open definition {}", crate::util::ellipsize(q, 40)), "process definition id".into(), 1000));
+                out.push((Item::Nav(Nav::Definition { id: q.to_string() }), format!("Open definition {}", crate::util::ellipsize(q, 40)), "process definition id".into(), 1000));
             }
             if !q.is_empty() {
                 let label = if mode == '#' { format!("Search instances for business key “{q}”") } else { format!("Search instances: {q}") };
@@ -300,10 +300,10 @@ impl Palette {
         let mut close = false;
         let screen = ctx.content_rect();
         let w = 620.0_f32.min(screen.width() - 40.0);
-        egui::Area::new(egui::Id::new("palette")).order(egui::Order::Foreground).fixed_pos(egui::Pos2::new(screen.center().x - w / 2.0, screen.min.y + 80.0)).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("palette")).order(egui::Order::Foreground).fixed_pos(egui::Pos2::new(screen.center().x - w / 2.0, screen.min.y + 80.0)).show(ctx, |ui| {
             egui::Frame::popup(ui.style()).inner_margin(10.0).show(ui, |ui| {
                 ui.set_width(w);
-                let edit = egui::TextEdit::singleline(&mut self.query).id(egui::Id::new("palette-input")).hint_text("Type a command, a definition key or name, an instance id or business key…   (> commands, # business key)").desired_width(f32::INFINITY).font(egui::TextStyle::Heading).frame(egui::Frame::NONE);
+                let edit = egui::TextEdit::singleline(&mut self.query).id(egui::Id::unique("palette-input")).hint_text("Type a command, a definition key or name, an instance id or business key…   (> commands, # business key)").desired_width(f32::INFINITY).font(egui::TextStyle::Heading).frame(egui::Frame::NONE);
                 let r = ui.add(edit);
                 if self.want_focus {
                     r.request_focus();
@@ -342,7 +342,7 @@ impl Palette {
                                 });
                             })
                         });
-                        let rr = ui.interact(resp.response.rect, egui::Id::new(("palette-item", i)), egui::Sense::click());
+                        let rr = ui.interact(resp.response.rect, egui::Id::unique(("palette-item", i)), egui::Sense::click());
                         if rr.hovered() {
                             self.cursor = i;
                         }
@@ -364,7 +364,7 @@ impl Palette {
                 self.open = false;
                 match item {
                     Item::Cmd(c) => c.run(app),
-                    Item::Nav(_, nav) => app.navigate(nav, NavMode::Here),
+                    Item::Nav(nav) => app.navigate(nav, NavMode::Here),
                     Item::Search(q) => app.navigate(Nav::Search { query: q }, NavMode::Here),
                 }
             }

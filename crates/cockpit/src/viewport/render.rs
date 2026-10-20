@@ -266,7 +266,7 @@ impl<'a> Renderer<'a> {
         } else {
             self.painter.line_segment([Pos2::new(r.min.x, r.min.y + header), Pos2::new(r.max.x, r.min.y + header)], Stroke::new(self.px(1.0).clamp(0.5, 2.0), st.lane_stroke.gamma_multiply(a)));
             if lod <= Lod::Low {
-                self.label_in_rect(e.display_name(), Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + header)), st.text.gamma_multiply(a), true, Align2::CENTER_CENTER);
+                self.label_in_rect(e.display_name(), Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + header)), st.text.gamma_multiply(a), Align2::CENTER_CENTER);
             }
         }
     }
@@ -285,7 +285,7 @@ impl<'a> Renderer<'a> {
         } else {
             self.painter.line_segment([Pos2::new(r.min.x, r.min.y + header), Pos2::new(r.max.x, r.min.y + header)], Stroke::new(self.px(1.0).clamp(0.5, 2.0), st.lane_stroke.gamma_multiply(a)));
             if lod <= Lod::Low {
-                self.label_in_rect(e.display_name(), Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + header)), st.text.gamma_multiply(a), false, Align2::CENTER_CENTER);
+                self.label_in_rect(e.display_name(), Rect::from_min_max(r.min, Pos2::new(r.max.x, r.min.y + header)), st.text.gamma_multiply(a), Align2::CENTER_CENTER);
             }
         }
     }
@@ -296,7 +296,7 @@ impl<'a> Renderer<'a> {
         let s = Stroke::new(self.px(1.5).clamp(1.0, 3.0), self.style.stroke.gamma_multiply(a * 0.7));
         self.dashed_rect(r, self.px(8.0), self.px(4.0), s, self.px(10.0));
         if let Some(n) = &e.name {
-            self.label_in_rect(n, Rect::from_min_size(r.min + Vec2::new(self.px(6.0), self.px(4.0)), Vec2::new(r.width(), self.px(16.0))), self.style.text_muted.gamma_multiply(a), false, Align2::LEFT_TOP);
+            self.label_in_rect(n, Rect::from_min_size(r.min + Vec2::new(self.px(6.0), self.px(4.0)), Vec2::new(r.width(), self.px(16.0))), self.style.text_muted.gamma_multiply(a), Align2::LEFT_TOP);
         }
     }
 
@@ -314,7 +314,7 @@ impl<'a> Renderer<'a> {
         }
         if lod <= Lod::Low {
             let header = Rect::from_min_size(r.min + Vec2::new(self.px(8.0), self.px(4.0)), Vec2::new(r.width() - self.px(16.0), self.px(18.0)));
-            self.label_in_rect(e.display_name(), header, text, true, Align2::LEFT_TOP);
+            self.label_in_rect(e.display_name(), header, text, Align2::LEFT_TOP);
         }
         if lod <= Lod::Medium {
             self.paint_activity_markers(e, r, stroke, false);
@@ -348,9 +348,9 @@ impl<'a> Renderer<'a> {
                     self.paint_activity_markers(e, r, stroke, k.is_container());
                     let inner = r.shrink2(Vec2::new(self.px(6.0), self.px(6.0)));
                     let name = e.display_name();
-                    self.label_in_rect(name, inner, text, false, Align2::CENTER_CENTER);
+                    self.label_in_rect(name, inner, text, Align2::CENTER_CENTER);
                     if self.overlays.show_ids {
-                        self.label_in_rect(&e.id, Rect::from_min_max(Pos2::new(inner.min.x, inner.max.y - self.px(12.0)), inner.max), self.style.text_muted.gamma_multiply(text.a() as f32 / 255.0), false, Align2::CENTER_BOTTOM);
+                        self.label_in_rect(&e.id, Rect::from_min_max(Pos2::new(inner.min.x, inner.max.y - self.px(12.0)), inner.max), self.style.text_muted.gamma_multiply(text.a() as f32 / 255.0), Align2::CENTER_BOTTOM);
                     }
                 }
             }
@@ -486,7 +486,7 @@ impl<'a> Renderer<'a> {
                 let bw = self.px(10.0);
                 self.painter.add(Shape::line(vec![Pos2::new(r.min.x + bw, r.min.y), r.min, Pos2::new(r.min.x, r.max.y), Pos2::new(r.min.x + bw, r.max.y)], PathStroke::from(Stroke::new(w, stroke))));
                 if lod <= Lod::Medium {
-                    self.label_in_rect(e.display_name(), r.shrink2(Vec2::new(self.px(6.0), self.px(3.0))), text, false, Align2::LEFT_TOP);
+                    self.label_in_rect(e.display_name(), r.shrink2(Vec2::new(self.px(6.0), self.px(3.0))), text, Align2::LEFT_TOP);
                 }
             }
             ElementKind::DataStoreReference => {
@@ -730,7 +730,7 @@ impl<'a> Renderer<'a> {
     }
 
     /// Wrapped label centred in `rect`, shrinking the font when it does not fit.
-    fn label_in_rect(&self, text: &str, rect: Rect, color: Color32, bold: bool, align: Align2) {
+    fn label_in_rect(&self, text: &str, rect: Rect, color: Color32, align: Align2) {
         if rect.width() < 4.0 || rect.height() < 4.0 {
             return;
         }
@@ -741,8 +741,7 @@ impl<'a> Renderer<'a> {
         let min_size = (size * 0.6).max(3.5);
         let text = text.trim();
         loop {
-            let font = if bold { FontId::proportional(size) } else { FontId::proportional(size) };
-            let galley = self.painter.layout(text.to_string(), font, color, rect.width());
+            let galley = self.painter.layout(text.to_string(), FontId::proportional(size), color, rect.width());
             if galley.size().y <= rect.height() + 0.5 || size <= min_size {
                 // Truncate rows that do not fit.
                 let pos = align.align_size_within_rect(galley.size(), rect).min;

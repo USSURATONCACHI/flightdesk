@@ -5,7 +5,7 @@ use crate::inspector::{self, InspectorAction, RuntimeFacts};
 use crate::net::Loader;
 use crate::state::{Nav, NavMode};
 use crate::viewport::{self, BadgeKind, DiagramView, Overlays};
-use crate::widgets::{badge, filter_box, loader_status_inline, pill, progress_line, state_color, state_label};
+use crate::widgets::{badge, cell, filter_box, loader_status_inline, pill, progress_line, state_color, state_label, table_area};
 use camunda::{ActivityStatistics, HistoricProcessInstance, HistoricProcessInstanceQuery, Incident, ProcessDefinition};
 use egui::{Key, Modifiers, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -38,7 +38,7 @@ pub const DOCK_TABS: [&str; 4] = ["Inspector", "Instances", "Incidents", "Versio
 impl DefinitionPlace {
     pub fn new(def_id: String) -> Self {
         Self {
-            view: DiagramView::new(egui::Id::new(("def", &def_id))),
+            view: DiagramView::new(egui::Id::unique(("def", &def_id))),
             def_id,
             def: Loader::default(),
             versions: Loader::default(),
@@ -257,7 +257,7 @@ impl DefinitionPlace {
         let model_dock = model.clone();
         let mut open_instance: Option<(String, NavMode)> = None;
         let mut select_from_dock: Option<bpmn::Ref> = None;
-        super::dock(ui, app, "def-dock", &DOCK_TABS, &mut dock_tab, |ui, tab, app| match tab {
+        let (main_rect, _) = super::dock(ui, app, "def-dock", &DOCK_TABS, &mut dock_tab, |ui, tab, app| match tab {
             0 => match selection {
                 Some(r) => {
                     let mut facts = RuntimeFacts::default();
@@ -312,11 +312,12 @@ impl DefinitionPlace {
         self.dock_tab = dock_tab;
 
         // ---- diagram ----
-        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
+        let mut main_ui = crate::widgets::split::child_in(ui, main_rect);
+        egui::CentralPanel::default().frame(egui::Frame::NONE).show(&mut main_ui, |ui| {
             let style = tokens.diagram_style();
             let settings = app.diagram_settings();
             let model2 = model.clone();
-            let out = viewport::widget::show(ui, &mut self.view, &model, &mut self.overlays, &style, &settings, &|_, _| {}, &mut |ui, target| {
+            let out = viewport::Diagram { model: &model, style: &style, settings: &settings }.show(ui, &mut self.view, &mut self.overlays, &|_, _| {}, &mut |ui, target| {
                 crate::app::diagram_context_menu(ui, &model2, target, &mut actions);
             });
             if let Some((kind, id)) = out.badge_clicked {
@@ -398,7 +399,7 @@ impl DefinitionPlace {
     fn instances_dock(&mut self, ui: &mut egui::Ui, app: &mut App, model: &Arc<bpmn::Model>, open: &mut Option<(String, NavMode)>, select: &mut Option<bpmn::Ref>) {
         let tokens = app.tokens.clone();
         let w = ui.available_width();
-        ui.add_sized([w, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::new(("inst-filter", &self.def_id)), &mut self.instance_filter, "Business key or instance id", &mut self.filter_focus));
+        ui.add_sized([w, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique(("inst-filter", &self.def_id)), &mut self.instance_filter, "Business key or instance id", &mut self.filter_focus));
         ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut self.all_versions, "All versions");
             if let Some(a) = self.activity_filter.clone() {
@@ -444,6 +445,7 @@ impl DefinitionPlace {
         }
         let h = ui.available_height() - 30.0;
         let shift = ui.input(|i| i.modifiers.shift);
+        table_area(ui, ("inst-table", &self.def_id), 460.0, |ui| {
         TableBuilder::new(ui)
             .striped(true)
             .sense(egui::Sense::click())
@@ -467,13 +469,13 @@ impl DefinitionPlace {
                     let r = &rows[i];
                     row.set_selected(i == self.row_cursor);
                     row.col(|ui| {
-                        ui.label(RichText::new(r.business_key.clone().unwrap_or_else(|| "—".into())).size(12.0));
+                        cell(ui, RichText::new(r.business_key.clone().unwrap_or_else(|| "—".into())).size(12.0));
                     });
                     row.col(|ui| {
-                        ui.label(RichText::new(r.start_time.as_deref().map(crate::util::fmt_local_short).unwrap_or_default()).size(12.0)).on_hover_text(r.start_time.as_deref().map(crate::util::fmt_local).unwrap_or_default());
+                        cell(ui, RichText::new(r.start_time.as_deref().map(crate::util::fmt_local_short).unwrap_or_default()).size(12.0)).on_hover_text(r.start_time.as_deref().map(crate::util::fmt_local).unwrap_or_default());
                     });
                     row.col(|ui| {
-                        ui.label(RichText::new(crate::util::short_uuid(&r.id)).monospace().size(11.5)).on_hover_text(&r.id);
+                        cell(ui, RichText::new(crate::util::short_uuid(&r.id)).monospace().size(11.5)).on_hover_text(&r.id);
                     });
                     row.col(|ui| {
                         let st = r.state.as_deref().unwrap_or("ACTIVE");
@@ -509,6 +511,7 @@ impl DefinitionPlace {
                     });
                 });
             });
+        });
         let _ = select;
         // paging
         if let Some(n) = self.instances_count.data {

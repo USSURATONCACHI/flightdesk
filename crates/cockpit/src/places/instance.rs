@@ -6,7 +6,7 @@ use crate::inspector::{self, InspectorAction, RuntimeFacts};
 use crate::net::Loader;
 use crate::state::{Nav, NavMode};
 use crate::viewport::{self, BadgeKind, DiagramView, Overlays, PickMode};
-use crate::widgets::{badge, filter_box, kv, kv_link, kv_mono, loader_status_inline, pill, progress_line, section, state_color, state_label, Confirm, ToastKind};
+use crate::widgets::{badge, filter_box, kv, kv_link, kv_mono, loader_status_inline, pill, progress_line, section, state_color, state_label, AppAction, Confirm, ToastKind};
 use camunda::{ActivityInstance, ExternalTask, HistoricActivityInstance, HistoricProcessInstance, Incident, Job, JobDefinition, ModificationInstruction, ModificationRequest, ProcessInstance, RestartRequest, Task, VariableInstance, VariableValue};
 use egui::{Key, Modifiers, RichText};
 use std::collections::{HashMap, HashSet};
@@ -62,8 +62,8 @@ pub struct InstancePlace {
     pub var_edit: Option<VarEdit>,
     pub var_cursor: usize,
     pub trace: Option<TraceView>,
+    pub trace_height: f32,
     pub modification: ModState,
-    pub timeline_hover: Option<usize>,
     seen_epoch: u64,
     job_defs_for: String,
     assignee_edit: HashMap<String, String>,
@@ -72,7 +72,7 @@ pub struct InstancePlace {
 impl InstancePlace {
     pub fn new(id: String) -> Self {
         Self {
-            view: DiagramView::new(egui::Id::new(("inst", &id))),
+            view: DiagramView::new(egui::Id::unique(("inst", &id))),
             id,
             hist: Loader::default(),
             runtime: Loader::default(),
@@ -94,8 +94,8 @@ impl InstancePlace {
             var_edit: None,
             var_cursor: 0,
             trace: None,
+            trace_height: 260.0,
             modification: ModState::default(),
-            timeline_hover: None,
             seen_epoch: 0,
             job_defs_for: String::new(),
             assignee_edit: HashMap::new(),
@@ -415,7 +415,7 @@ impl InstancePlace {
         let mut open: Option<(Nav, NavMode)> = None;
         let model_dock = model.clone();
         let selection = self.view.selection.or(self.view.hover.filter(|_| ctx.input(|i| i.modifiers.alt)));
-        super::dock(ui, app, "inst-dock", &DOCK_TABS, &mut dock_tab, |ui, tab, app| match tab {
+        let (mut main_rect, _) = super::dock(ui, app, "inst-dock", &DOCK_TABS, &mut dock_tab, |ui, tab, app| match tab {
             0 => self.overview_dock(ui, app, &model_dock, &mut open),
             1 => match selection {
                 Some(r) => {
@@ -435,10 +435,15 @@ impl InstancePlace {
         });
         self.dock_tab = dock_tab;
 
-        // ---- trace panel ----
+        // ---- trace pane (bottom split of the main area) ----
+        let mut main_ui = crate::widgets::split::child_in(ui, main_rect);
         if self.trace.is_some() {
+            let sp = crate::widgets::split::split(&mut main_ui, egui::Id::unique(("trace-split", &self.id)), crate::widgets::split::Side::Bottom, &mut self.trace_height, 120.0, 0.7);
+            main_rect = sp.main;
+            main_ui.painter().rect_filled(sp.pane, 0.0, tokens.bg1);
+            let mut pane = crate::widgets::split::child_in(&mut main_ui, sp.pane);
             let mut close = false;
-            egui::Panel::bottom(("trace", &self.id)).resizable(true).default_size(260.0).min_size(120.0).frame(egui::Frame::new().fill(tokens.bg1).inner_margin(8.0)).show(ui, |ui| {
+            egui::Frame::new().inner_margin(8.0).show(&mut pane, |ui| {
                 let t = self.trace.as_mut().unwrap();
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(&t.title).strong());
@@ -452,7 +457,9 @@ impl InstancePlace {
                         }
                     });
                 });
+                let w = ui.available_width();
                 egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| {
+                    ui.set_min_width(w);
                     let f = t.filter.to_lowercase();
                     let text: String = if f.is_empty() { t.text.clone() } else { t.text.lines().filter(|l| l.to_lowercase().contains(&f)).collect::<Vec<_>>().join("\n") };
                     ui.add(egui::Label::new(RichText::new(text).monospace().size(11.5)).extend());
@@ -462,6 +469,7 @@ impl InstancePlace {
                 self.trace = None;
             }
         }
+        let mut main_ui = crate::widgets::split::child_in(&mut main_ui, main_rect);
 
         // ---- diagram ----
         let tasks = self.tasks.data.clone().unwrap_or_default();
@@ -481,11 +489,11 @@ impl InstancePlace {
         };
         let mut mod_actions: Vec<ModAction> = vec![];
         let overlays_running = self.overlays.running.clone();
-        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::NONE).show(&mut main_ui, |ui| {
             let style = tokens.diagram_style();
             let settings = app.diagram_settings();
             let model2 = model.clone();
-            let out = viewport::widget::show(ui, &mut self.view, &model, &mut self.overlays, &style, &settings, &extra, &mut |ui, target| {
+            let out = viewport::Diagram { model: &model, style: &style, settings: &settings }.show(ui, &mut self.view, &mut self.overlays, &extra, &mut |ui, target| {
                 crate::app::diagram_context_menu(ui, &model2, target, &mut actions);
                 if let Some(bpmn::Ref::Element(i)) = target {
                     let e = &model2.elements[i];
@@ -864,7 +872,7 @@ impl InstancePlace {
         let finished = self.finished();
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 170.0).max(120.0);
-            ui.add_sized([w, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::new(("var-filter", &self.id)), &mut self.var_filter, "Filter name or value", &mut self.var_focus));
+            ui.add_sized([w, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique(("var-filter", &self.id)), &mut self.var_filter, "Filter name or value", &mut self.var_focus));
             if !finished && ui.button("+ Add").clicked() {
                 self.var_edit = Some(VarEdit { name: String::new(), type_: "String".into(), text: String::new(), is_new: true, error: None });
             }
@@ -942,13 +950,13 @@ impl InstancePlace {
                                 move |c| async move { c.put_process_variable(&pid, &n2, &v2).await },
                                 move |app, r| match r {
                                     Ok(()) => {
-                                        let undo: Option<Box<dyn FnOnce(&mut App) + Send>> = old.map(|o| {
+                                        let undo: Option<AppAction> = old.map(|o| {
                                             let pid2 = app_pid(app);
                                             let n3 = name.clone();
                                             Box::new(move |app: &mut App| {
                                                 let n4 = n3.clone();
                                                 app.run_action(move |c| async move { c.put_process_variable(&pid2, &n4, &o).await }, format!("Variable {n3} restored"), "Undo failed");
-                                            }) as Box<dyn FnOnce(&mut App) + Send>
+                                            }) as AppAction
                                         });
                                         app.toasts.push_full(ToastKind::Success, format!("Variable {name} saved"), None, undo);
                                         app.bump_refresh();
@@ -1068,13 +1076,13 @@ impl InstancePlace {
                     move |c| async move { c.delete_process_variable(&p2, &n2).await },
                     move |app, r| match r {
                         Ok(()) => {
-                            let undo: Option<Box<dyn FnOnce(&mut App) + Send>> = old.map(|o| {
+                            let undo: Option<AppAction> = old.map(|o| {
                                 let n3 = name.clone();
                                 let p3 = pid.clone();
                                 Box::new(move |app: &mut App| {
                                     let n4 = n3.clone();
                                     app.run_action(move |c| async move { c.put_process_variable(&p3, &n4, &o).await }, format!("Variable {n3} restored"), "Undo failed");
-                                }) as Box<dyn FnOnce(&mut App) + Send>
+                                }) as AppAction
                             });
                             app.toasts.push_full(ToastKind::Success, format!("Variable {name} deleted"), None, undo);
                             app.bump_refresh();
@@ -1645,7 +1653,7 @@ impl InstancePlace {
         }
         if let Some(i) = hovered_row {
             let a = rows[i];
-            crate::widgets::tooltip_at_pointer(ui, egui::Id::new(("tl-tip", &a.id)), |ui| {
+            crate::widgets::tooltip_at_pointer(ui, egui::Id::unique(("tl-tip", &a.id)), |ui| {
                 ui.label(RichText::new(a.activity_name.clone().unwrap_or(a.activity_id.clone())).strong());
                 ui.label(format!("{}  ·  {}", a.activity_type.clone().unwrap_or_default(), a.base_activity_id()));
                 ui.label(format!("start {}", a.start_time.as_deref().map(crate::util::fmt_local).unwrap_or_default()));

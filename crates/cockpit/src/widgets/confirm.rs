@@ -8,7 +8,7 @@ pub struct Confirm {
     pub body: String,
     pub confirm_label: String,
     pub danger: bool,
-    pub action: Option<Box<dyn FnOnce(&mut crate::app::App) + Send>>,
+    pub action: Option<super::AppAction>,
     first_frame: bool,
 }
 
@@ -20,7 +20,7 @@ impl Confirm {
     /// Returns Some(true) to run, Some(false) to cancel, None while open.
     pub fn ui(&mut self, ctx: &egui::Context, tokens: &crate::theme::Tokens) -> Option<bool> {
         let mut result = None;
-        let modal = egui::Modal::new(egui::Id::new("confirm-modal")).show(ctx, |ui| {
+        let modal = egui::Modal::new(egui::Id::unique("confirm-modal")).show(ctx, |ui| {
             ui.set_width(440.0);
             ui.heading(&self.title);
             ui.add_space(6.0);

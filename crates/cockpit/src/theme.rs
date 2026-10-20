@@ -195,3 +195,81 @@ pub fn install_fonts(ctx: &egui::Context) {
     }
     ctx.set_fonts(defs);
 }
+
+/// The desktop's light/dark preference, refreshed in the background.
+///
+/// winit reports a system theme on Windows and macOS; on Linux it does not, so we ask the
+/// XDG desktop portal (works on GNOME, KDE and most others) and fall back to gsettings.
+pub mod system {
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    struct Cache {
+        prefers_dark: Option<bool>,
+        checked: Option<Instant>,
+        in_flight: bool,
+    }
+
+    fn cache() -> &'static Mutex<Cache> {
+        static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+        CACHE.get_or_init(|| Mutex::new(Cache { prefers_dark: None, checked: None, in_flight: false }))
+    }
+
+    /// Latest known preference; kicks off a background probe when stale (every 10 s).
+    pub fn prefers_dark() -> Option<bool> {
+        let mut c = cache().lock().unwrap();
+        let stale = c.checked.map(|t| t.elapsed() > Duration::from_secs(10)).unwrap_or(true);
+        if stale && !c.in_flight {
+            c.in_flight = true;
+            std::thread::spawn(|| {
+                let v = probe();
+                let mut c = cache().lock().unwrap();
+                c.prefers_dark = v.or(c.prefers_dark);
+                c.checked = Some(Instant::now());
+                c.in_flight = false;
+            });
+        }
+        c.prefers_dark
+    }
+
+    /// Blocking probe used once at start-up so the first frame already has the right theme.
+    pub fn probe_now() -> Option<bool> {
+        let v = probe();
+        let mut c = cache().lock().unwrap();
+        c.prefers_dark = v.or(c.prefers_dark);
+        c.checked = Some(Instant::now());
+        v
+    }
+
+    #[cfg(target_os = "linux")]
+    fn probe() -> Option<bool> {
+        use std::process::Command;
+        let run = |cmd: &str, args: &[&str]| Command::new(cmd).args(args).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).to_string());
+        // org.freedesktop.appearance color-scheme: 0 = no preference, 1 = prefer dark, 2 = prefer light
+        let portal = run("gdbus", &["call", "--session", "--dest", "org.freedesktop.portal.Desktop", "--object-path", "/org/freedesktop/portal/desktop", "--method", "org.freedesktop.portal.Settings.ReadOne", "org.freedesktop.appearance", "color-scheme"])
+            .or_else(|| run("busctl", &["--user", "call", "org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop", "org.freedesktop.portal.Settings", "ReadOne", "ss", "org.freedesktop.appearance", "color-scheme"]));
+        if let Some(out) = portal {
+            if let Some(d) = out.chars().rev().find(|c| c.is_ascii_digit()) {
+                return match d {
+                    '1' => Some(true),
+                    '2' => Some(false),
+                    _ => None,
+                };
+            }
+        }
+        if let Some(out) = run("gsettings", &["get", "org.gnome.desktop.interface", "color-scheme"]) {
+            if out.contains("prefer-dark") {
+                return Some(true);
+            }
+            if out.contains("prefer-light") || out.contains("default") {
+                return Some(false);
+            }
+        }
+        None
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn probe() -> Option<bool> {
+        None
+    }
+}

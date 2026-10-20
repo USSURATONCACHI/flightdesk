@@ -215,7 +215,28 @@ impl Default for DiagramOutput {
 /// Extra per-element text for the hover tooltip, supplied by the place.
 pub type TooltipExtra<'a> = &'a dyn Fn(&mut Ui, &str);
 
-pub fn show(
+/// A diagram to draw: the model plus the colours and input settings to draw it with.
+pub struct Diagram<'a> {
+    pub model: &'a Model,
+    pub style: &'a DiagramStyle,
+    pub settings: &'a DiagramSettings,
+}
+
+/// Per-frame timing passed to the key handler.
+struct FrameTime {
+    dt: f32,
+    now: f64,
+}
+
+impl Diagram<'_> {
+    /// Draw the diagram into the remaining space of `ui`, handling all input.
+    pub fn show(&self, ui: &mut Ui, view: &mut DiagramView, overlays: &mut Overlays, tooltip_extra: TooltipExtra<'_>, context_menu: &mut dyn FnMut(&mut Ui, Option<Ref>)) -> DiagramOutput {
+        show_impl(ui, view, self.model, overlays, self.style, self.settings, tooltip_extra, context_menu)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn show_impl(
     ui: &mut Ui,
     view: &mut DiagramView,
     model: &Model,
@@ -289,7 +310,9 @@ pub fn show(
     let primary_drag = response.dragged_by(egui::PointerButton::Primary);
     let middle_drag = response.dragged_by(egui::PointerButton::Middle);
     if primary_drag || middle_drag {
-        let d = response.drag_delta();
+        // Alt doubles the pan speed: the board moves twice as far as the cursor.
+        let boost = if ctx.input(|i| i.modifiers.alt) { 2.0 } else { 1.0 };
+        let d = response.drag_delta() * boost;
         view.camera.drag_screen(d);
         let dtt = (now - view.last_drag_time).max(1e-3) as f32;
         let v = -d / dtt;
@@ -393,7 +416,7 @@ pub fn show(
 
     // ---- keyboard ----
     if keys_allowed {
-        handle_keys(&ctx, view, model, settings, rect, dt, now, &mut out);
+        handle_keys(&ctx, view, model, settings, rect, &FrameTime { dt, now }, &mut out);
     } else {
         view.key_hold_since = None;
     }
@@ -503,8 +526,8 @@ impl DiagramView {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn handle_keys(ctx: &egui::Context, view: &mut DiagramView, model: &Model, settings: &DiagramSettings, rect: Rect, dt: f32, now: f64, out: &mut DiagramOutput) {
+fn handle_keys(ctx: &egui::Context, view: &mut DiagramView, model: &Model, settings: &DiagramSettings, rect: Rect, time: &FrameTime, out: &mut DiagramOutput) {
+    let FrameTime { dt, now } = *time;
     let anchor = match view.selection {
         Some(Ref::Element(i)) => {
             let b = model.elements[i].bounds;

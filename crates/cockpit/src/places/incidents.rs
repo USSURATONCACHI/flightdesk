@@ -3,7 +3,7 @@
 use crate::app::App;
 use crate::net::Loader;
 use crate::state::{Nav, NavMode};
-use crate::widgets::{filter_box, heading_row, loader_status_inline, pill, progress_line};
+use crate::widgets::{cell, filter_box, heading_row, loader_status_inline, pill, progress_line, table_area};
 use camunda::Incident;
 use egui::{Key, Modifiers, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -44,7 +44,7 @@ impl IncidentsPlace {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     app.refresh_controls(ui, self.list.age(), self.list.is_loading());
                     ui.checkbox(&mut self.group, "Group by message");
-                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::new("inc-filter"), &mut self.filter, "Filter message, type, definition, activity", &mut self.filter_focus));
+                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique("inc-filter"), &mut self.filter, "Filter message, type, definition, activity", &mut self.filter_focus));
                 });
             });
             loader_status_inline(ui, &self.list, &tokens);
@@ -72,7 +72,7 @@ impl IncidentsPlace {
                         None => groups.push((key, vec![i])),
                     }
                 }
-                groups.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+                groups.sort_by_key(|g| std::cmp::Reverse(g.1.len()));
                 egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                     for (k, v) in groups {
                         crate::widgets::section(ui, &k, &format!("{} × {}", v.len(), k), v.len() <= 3, |ui| {
@@ -86,11 +86,9 @@ impl IncidentsPlace {
                                         }
                                     }
                                     ui.label(RichText::new(i.time().map(crate::util::fmt_relative).unwrap_or_default()).weak().small());
-                                    if i.incident_type == "failedJob" {
-                                        if let Some(j) = i.configuration.clone() {
-                                            if ui.small_button("Retry").clicked() {
-                                                app.action_set_job_retries(j, 1);
-                                            }
+                                    if let ("failedJob", Some(j)) = (i.incident_type.as_str(), i.configuration.clone()) {
+                                        if ui.small_button("Retry").clicked() {
+                                            app.action_set_job_retries(j, 1);
                                         }
                                     }
                                 });
@@ -124,6 +122,7 @@ impl IncidentsPlace {
                 });
             }
             let shift = ui.input(|i| i.modifiers.shift);
+            table_area(ui, "inc-table", 900.0, |ui| {
             TableBuilder::new(ui)
                 .striped(true)
                 .resizable(true)
@@ -156,10 +155,10 @@ impl IncidentsPlace {
                             pill(ui, &inc.incident_type, tokens.incident);
                         });
                         row.col(|ui| {
-                            ui.label(RichText::new(def_key(&inc.process_definition_id)).monospace().size(11.5));
+                            cell(ui, RichText::new(def_key(&inc.process_definition_id)).monospace().size(11.5));
                         });
                         row.col(|ui| {
-                            ui.label(RichText::new(inc.activity_id.clone().unwrap_or_default()).monospace().size(11.5));
+                            cell(ui, RichText::new(inc.activity_id.clone().unwrap_or_default()).monospace().size(11.5));
                         });
                         row.col(|ui| {
                             let m = inc.incident_message.clone().unwrap_or_default();
@@ -171,17 +170,10 @@ impl IncidentsPlace {
                             }
                         });
                         row.col(|ui| {
+                            let retry = |ui: &mut egui::Ui| ui.small_button("Retry").on_hover_text("Set retries to 1").clicked();
                             match (inc.incident_type.as_str(), inc.configuration.clone()) {
-                                ("failedJob", Some(j)) => {
-                                    if ui.small_button("Retry").on_hover_text("Set job retries to 1").clicked() {
-                                        app.action_set_job_retries(j, 1);
-                                    }
-                                }
-                                ("failedExternalTask", Some(e)) => {
-                                    if ui.small_button("Retry").clicked() {
-                                        app.action_set_external_task_retries(e, 1);
-                                    }
-                                }
+                                ("failedJob", Some(j)) if retry(ui) => app.action_set_job_retries(j, 1),
+                                ("failedExternalTask", Some(e)) if retry(ui) => app.action_set_external_task_retries(e, 1),
                                 _ => {}
                             }
                         });
@@ -199,6 +191,7 @@ impl IncidentsPlace {
                         }
                     });
                 });
+            });
             if let Some((id, mode)) = open {
                 app.navigate(Nav::Instance { id }, mode);
             }

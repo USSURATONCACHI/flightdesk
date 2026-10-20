@@ -205,7 +205,7 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
                 kv(ui, k, v);
             }
             for f in &e.ext.form_fields {
-                let mut d = format!("{}", f.field_type.clone().unwrap_or_default());
+                let mut d = f.field_type.clone().unwrap_or_default();
                 if let Some(l) = &f.label {
                     d.push_str(&format!("  “{l}”"));
                 }
@@ -449,7 +449,12 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
     let other: Vec<&(String, String)> = e
         .attrs
         .iter()
-        .filter(|(k, _)| !shown.contains(&k.as_str()) && !(k.starts_with("camunda:") && impl_keys.iter().any(|(ik, _)| format!("camunda:{ik}") == *k)) && !(k.starts_with("camunda:") && ut_keys.iter().any(|(uk, _)| format!("camunda:{uk}") == *k)) && !k.starts_with("xmlns"))
+        .filter(|(k, _)| {
+            let camunda_key = k.strip_prefix("camunda:");
+            let shown_impl = camunda_key.map(|c| impl_keys.iter().any(|(ik, _)| *ik == c)).unwrap_or(false);
+            let shown_task = camunda_key.map(|c| ut_keys.iter().any(|(uk, _)| *uk == c)).unwrap_or(false);
+            !shown.contains(&k.as_str()) && !shown_impl && !shown_task && !k.starts_with("xmlns")
+        })
         .collect();
     if !other.is_empty() || !e.ext.other.is_empty() {
         section(ui, ("other", &e.id), "Other attributes", false, |ui| {

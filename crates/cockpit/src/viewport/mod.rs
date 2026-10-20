@@ -5,4 +5,4 @@ pub mod render;
 pub mod widget;
 
 pub use render::{BadgeKind, DiagramStyle, Overlays};
-pub use widget::{DiagramSettings, DiagramView, PickMode};
+pub use widget::{Diagram, DiagramSettings, DiagramView, PickMode};

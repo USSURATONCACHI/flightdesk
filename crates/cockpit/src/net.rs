@@ -29,11 +29,6 @@ impl<A: 'static> Net<A> {
         *self.in_flight.lock().unwrap()
     }
 
-    /// Replace the client (reconnect).
-    pub fn set_client(&mut self, client: Client) {
-        self.client = Arc::new(client);
-    }
-
     /// Start a fetch into a loader slot.
     pub fn fetch<T, F, Fut>(&self, loader: &mut Loader<T>, f: F)
     where
@@ -44,7 +39,7 @@ impl<A: 'static> Net<A> {
         let slot: Arc<Mutex<Option<Result<T, ApiError>>>> = Arc::new(Mutex::new(None));
         let gen = loader.generation.wrapping_add(1);
         loader.generation = gen;
-        loader.pending = Some(Pending { slot: slot.clone(), since: Instant::now() });
+        loader.pending = Some(Pending { slot: slot.clone() });
         let client = self.client.clone();
         let ctx = self.ctx.clone();
         let inflight = self.in_flight.clone();
@@ -88,14 +83,10 @@ impl<A: 'static> Net<A> {
         v
     }
 
-    pub fn block_on<Fut: Future>(&self, f: Fut) -> Fut::Output {
-        self.rt.block_on(f)
-    }
 }
 
 struct Pending<T> {
     slot: Arc<Mutex<Option<Result<T, ApiError>>>>,
-    since: Instant,
 }
 
 /// Async data slot: keeps the last good value while reloading or after an error.
@@ -105,22 +96,17 @@ pub struct Loader<T> {
     pub fetched_at: Option<Instant>,
     pending: Option<Pending<T>>,
     generation: u64,
-    /// Request signature; a place compares it to decide whether to refetch.
-    pub key: String,
 }
 
 impl<T> Default for Loader<T> {
     fn default() -> Self {
-        Self { data: None, error: None, fetched_at: None, pending: None, generation: 0, key: String::new() }
+        Self { data: None, error: None, fetched_at: None, pending: None, generation: 0 }
     }
 }
 
 impl<T> Loader<T> {
     pub fn is_loading(&self) -> bool {
         self.pending.is_some()
-    }
-    pub fn loading_for(&self) -> Option<std::time::Duration> {
-        self.pending.as_ref().map(|p| p.since.elapsed())
     }
     pub fn age(&self) -> Option<std::time::Duration> {
         self.fetched_at.map(|t| t.elapsed())
@@ -161,12 +147,6 @@ impl<T> Loader<T> {
     }
     pub fn reset(&mut self) {
         *self = Self::default();
-    }
-    pub fn set(&mut self, v: T) {
-        self.data = Some(v);
-        self.error = None;
-        self.fetched_at = Some(Instant::now());
-        self.pending = None;
     }
     pub fn invalidate(&mut self) {
         self.fetched_at = None;

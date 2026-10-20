@@ -81,6 +81,8 @@ pub struct App {
     pub frame_theme_dirty: bool,
     pub startup_nav: Vec<Nav>,
     pub startup_dock: Option<usize>,
+    /// `--theme` from the command line: applies to this run only and is never saved.
+    pub theme_override: Option<ThemeMode>,
     pub stats: bool,
     frame_times: Vec<f32>,
     pub mcp: Option<crate::mcp::McpServer>,
@@ -139,6 +141,7 @@ impl App {
             frame_theme_dirty: false,
             startup_nav: vec![],
             startup_dock: None,
+            theme_override: None,
             stats: false,
             frame_times: Vec::new(),
             mcp: None,
@@ -149,12 +152,17 @@ impl App {
         }
     }
 
-    fn tokens_for(mode: ThemeMode, ctx: &egui::Context) -> Tokens {
-        let dark = match mode {
+    /// Whether the given mode currently means dark, consulting the OS for `System`.
+    pub fn wants_dark(mode: ThemeMode, ctx: &egui::Context) -> bool {
+        match mode {
             ThemeMode::Dark => true,
             ThemeMode::Light => false,
-            ThemeMode::System => ctx.system_theme().map(|t| t == egui::Theme::Dark).unwrap_or(true),
-        };
+            ThemeMode::System => ctx.system_theme().map(|t| t == egui::Theme::Dark).or_else(crate::theme::system::prefers_dark).unwrap_or(false),
+        }
+    }
+
+    fn tokens_for(mode: ThemeMode, ctx: &egui::Context) -> Tokens {
+        let dark = Self::wants_dark(mode, ctx);
         if dark {
             Tokens::dark()
         } else {
@@ -162,16 +170,30 @@ impl App {
         }
     }
 
+    /// The theme mode in effect: a command-line override, else the saved setting.
+    pub fn theme_mode(&self) -> ThemeMode {
+        self.theme_override.unwrap_or(self.settings.theme)
+    }
+
     pub fn apply_theme(&mut self, ctx: &egui::Context) {
-        self.tokens = Self::tokens_for(self.settings.theme, ctx);
+        self.tokens = Self::tokens_for(self.theme_mode(), ctx);
         self.tokens.apply(ctx, self.settings.density);
     }
 
-    pub fn toggle_theme(&mut self) {
-        self.settings.theme = if self.tokens.dark { ThemeMode::Light } else { ThemeMode::Dark };
+    pub fn set_theme_mode(&mut self, mode: ThemeMode) {
+        self.theme_override = None;
+        self.settings.theme = mode;
         self.settings_dirty = true;
-        self.place_request = None;
         self.frame_theme_dirty = true;
+    }
+
+    /// Ctrl+Shift+T cycles system → light → dark.
+    pub fn toggle_theme(&mut self) {
+        self.set_theme_mode(match self.theme_mode() {
+            ThemeMode::System => ThemeMode::Light,
+            ThemeMode::Light => ThemeMode::Dark,
+            ThemeMode::Dark => ThemeMode::System,
+        });
     }
 
     pub fn diagram_settings(&self) -> DiagramSettings {
@@ -179,7 +201,7 @@ impl App {
     }
 
     pub fn auto_refresh_allowed(&self) -> bool {
-        !self.paused && !(self.settings.pause_when_unfocused && !self.window_focused)
+        !self.paused && (self.window_focused || !self.settings.pause_when_unfocused)
     }
 
     // ---------- connection ----------
@@ -334,11 +356,11 @@ impl App {
     fn build_place(&mut self, nav: Nav) -> Option<Place> {
         Some(match nav {
             Nav::Definitions => Place::Definitions(DefinitionsPlace::default()),
-            Nav::Definition { id } => Place::Definition(DefinitionPlace::new(id)),
+            Nav::Definition { id } => Place::Definition(Box::new(DefinitionPlace::new(id))),
             Nav::DefinitionKey { key } => {
                 // Resolve latest version by key through the cache or a request.
                 if let Some(d) = self.cache.defs.data.as_ref().and_then(|v| v.iter().find(|d| d.key == key)) {
-                    Place::Definition(DefinitionPlace::new(d.id.clone()))
+                    Place::Definition(Box::new(DefinitionPlace::new(d.id.clone())))
                 } else {
                     let k = key.clone();
                     if let Some(net) = &self.net {
@@ -355,12 +377,12 @@ impl App {
                     return None;
                 }
             }
-            Nav::Instance { id } => Place::Instance(InstancePlace::new(id)),
-            Nav::Search { query } => Place::Search(SearchPlace::new(query)),
-            Nav::Incidents => Place::Incidents(IncidentsPlace::default()),
+            Nav::Instance { id } => Place::Instance(Box::new(InstancePlace::new(id))),
+            Nav::Search { query } => Place::Search(Box::new(SearchPlace::new(query))),
+            Nav::Incidents => Place::Incidents(Box::default()),
             Nav::Batches => Place::Batches(BatchesPlace::default()),
             Nav::Settings => Place::Settings(SettingsPlace::default()),
-            Nav::File { path } => Place::File(FilePlace::new(path)),
+            Nav::File { path } => Place::File(Box::new(FilePlace::new(path))),
         })
     }
 
@@ -582,10 +604,8 @@ impl App {
                                     if label.middle_clicked() && self.tabs.len() > 1 {
                                         close = Some(i);
                                     }
-                                    if self.tabs.len() > 1 {
-                                        if ui.add(egui::Button::new(RichText::new("×").size(11.0)).frame(false)).on_hover_text("Close (Ctrl+W)").clicked() {
-                                            close = Some(i);
-                                        }
+                                    if self.tabs.len() > 1 && ui.add(egui::Button::new(RichText::new("×").size(11.0)).frame(false)).on_hover_text("Close (Ctrl+W)").clicked() {
+                                        close = Some(i);
                                     }
                                 })
                             });
@@ -627,9 +647,14 @@ impl App {
                     if ui.add(egui::Button::new("⚙").frame(false)).on_hover_text("Settings (Ctrl+,)").clicked() {
                         self.navigate(Nav::Settings, NavMode::Here);
                     }
-                    if ui.add(egui::Button::new(if self.tokens.dark { "☀" } else { "☾" }).frame(false)).on_hover_text("Toggle theme (Ctrl+Shift+T)").clicked() {
-                        self.toggle_theme();
-                    }
+                    let theme_btn = ui.add(egui::Button::new(if self.tokens.dark { "☾" } else { "☀" }).frame(false)).on_hover_text("Theme: system / light / dark (Ctrl+Shift+T cycles)");
+                    egui::Popup::menu(&theme_btn).show(|ui| {
+                        for (mode, label) in [(ThemeMode::System, "System"), (ThemeMode::Light, "Light"), (ThemeMode::Dark, "Dark")] {
+                            if ui.selectable_label(self.theme_mode() == mode, label).clicked() {
+                                self.set_theme_mode(mode);
+                            }
+                        }
+                    });
                     let search = egui::Button::new(RichText::new("🔍  Search or jump…   Ctrl+K").color(tokens.fg1)).fill(tokens.bg2).min_size(egui::Vec2::new(200.0, 24.0));
                     if ui.add(search).clicked() {
                         self.palette.open();
@@ -743,6 +768,9 @@ impl App {
         }
         self.set_ctx(ctx);
         self.window_focused = ctx.input(|i| i.focused);
+        if self.theme_mode() == ThemeMode::System && self.frame.is_multiple_of(60) && Self::wants_dark(ThemeMode::System, ctx) != self.tokens.dark {
+            self.frame_theme_dirty = true;
+        }
         if self.frame_theme_dirty {
             self.frame_theme_dirty = false;
             self.apply_theme(ctx);

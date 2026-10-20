@@ -102,17 +102,11 @@ pub fn ellipsize(s: &str, max: usize) -> String {
     }
 }
 
-/// Compact preview of a variable value for tables.
-pub fn value_preview(v: &serde_json::Value, type_: Option<&str>) -> String {
+/// Compact single-line preview of a variable value for tables (strings unquoted).
+pub fn value_preview(v: &serde_json::Value, _type: Option<&str>) -> String {
     match v {
         serde_json::Value::Null => "null".into(),
-        serde_json::Value::String(s) => {
-            if matches!(type_, Some("Json") | Some("Object") | Some("Xml")) {
-                ellipsize(s, 120)
-            } else {
-                ellipsize(s, 120)
-            }
-        }
+        serde_json::Value::String(s) => ellipsize(s, 120),
         other => ellipsize(&other.to_string(), 120),
     }
 }

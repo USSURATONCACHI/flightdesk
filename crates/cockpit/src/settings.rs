@@ -35,17 +35,11 @@ impl EngineProfile {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct SavedSearch {
     pub name: String,
     pub query: String,
-}
-
-impl Default for SavedSearch {
-    fn default() -> Self {
-        Self { name: String::new(), query: String::new() }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -76,13 +76,15 @@ fn main() -> eframe::Result<()> {
         mcp::stdio_bridge(url);
         return Ok(());
     }
-    let mut settings = settings::Settings::load();
-    if let Some(t) = &args.theme {
-        settings.theme = match t.as_str() {
-            "light" => theme::ThemeMode::Light,
-            "dark" => theme::ThemeMode::Dark,
-            _ => theme::ThemeMode::System,
-        };
+    let settings = settings::Settings::load();
+    // `--theme` applies to this run only; it is never written to the settings file.
+    let theme_override = args.theme.as_deref().map(|t| match t {
+        "light" => theme::ThemeMode::Light,
+        "dark" => theme::ThemeMode::Dark,
+        _ => theme::ThemeMode::System,
+    });
+    if theme_override.unwrap_or(settings.theme) == theme::ThemeMode::System {
+        theme::system::probe_now();
     }
     let (w, h) = args.size.unwrap_or((1440.0, 900.0));
     let mut viewport = egui::ViewportBuilder::default().with_title("Flightdeck").with_inner_size([w, h]).with_min_inner_size([800.0, 500.0]).with_app_id("flightdeck");
@@ -102,6 +104,10 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             let mut app = app::App::new(&cc.egui_ctx, settings, args.scale);
+            if theme_override.is_some() {
+                app.theme_override = theme_override;
+                app.frame_theme_dirty = true;
+            }
             app.set_ctx(&cc.egui_ctx);
             if let Some(p) = &args.screenshot {
                 app.screenshot = Some(app::ScreenshotPlan { path: p.clone(), after_frames: args.screenshot_after, exit: args.exit_after_screenshot, requested: false });

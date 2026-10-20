@@ -81,7 +81,7 @@ uses Xwayland to place test windows on the second monitor).
 | Keys | Action |
 |---|---|
 | Wheel / pinch, Shift+wheel | zoom at cursor, pan horizontally |
-| Drag, middle-drag, Space+drag | pan (flick for inertia) |
+| Drag, middle-drag, Space+drag | pan (flick for inertia; hold Alt to pan twice as fast) |
 | ↑↓←→ · WASD · HJKL | pan (hold to accelerate, Shift faster) |
 | `+` `−` · `0` · `1` · `F` · `Shift+F` | zoom · fit all · 100 % · fit selection · fit tokens |
 | Tab / Shift+Tab, Alt+→ / Alt+← | next element along the flow · follow outgoing/incoming flow |
@@ -89,7 +89,7 @@ uses Xwayland to place test windows on the second monitor).
 | Ctrl+F · Ctrl+K · Ctrl+Shift+F | find element · command palette · instance search |
 | Ctrl+1…9 · Ctrl+B | dock tab · toggle dock |
 | Ctrl+T · Ctrl+W · Ctrl+Tab · Alt+←/→ | tabs and history |
-| R / F5 · Ctrl+Shift+P | refresh · pause auto-refresh |
+| R / F5 · Ctrl+Shift+P · Ctrl+Shift+T | refresh · pause auto-refresh · cycle theme (system / light / dark) |
 | `/` · `?` · Esc | focus filter · shortcuts · back out one level |
 
 ## Project layout

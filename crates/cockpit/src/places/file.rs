@@ -13,6 +13,7 @@ pub struct FilePlace {
     pub view: DiagramView,
     pub overlays: Overlays,
     pub dock_tab: usize,
+    warned: bool,
 }
 
 impl FilePlace {
@@ -21,15 +22,18 @@ impl FilePlace {
             Ok(m) => (Some(Arc::new(m)), None),
             Err(e) => (None, Some(e)),
         };
-        Self { view: DiagramView::new(egui::Id::new(("file", &path))), path, model, error, overlays: Overlays::default(), dock_tab: 0 }
+        Self { view: DiagramView::new(egui::Id::unique(("file", &path))), path, model, error, overlays: Overlays::default(), dock_tab: 0, warned: false }
     }
     pub fn title(&self) -> String {
         self.path.file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| "file".into())
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, app: &mut App) {
-        let ctx = ui.ctx().clone();
-        let ctx = &ctx;
+        if !self.warned && self.model.as_ref().map(|m| !m.warnings.is_empty()).unwrap_or(false) {
+            self.warned = true;
+            let n = self.model.as_ref().map(|m| m.warnings.len()).unwrap_or(0);
+            app.toasts.push(crate::widgets::ToastKind::Warning, format!("{n} diagram warning{} (see the Inspector tab)", if n == 1 { "" } else { "s" }));
+        }
         let Some(model) = self.model.clone() else {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.label(format!("Cannot open {}: {}", self.path.display(), self.error.clone().unwrap_or_default()));
@@ -37,7 +41,7 @@ impl FilePlace {
             return;
         };
         let mut actions = vec![];
-        super::dock(ui, app, "file-dock", &["Inspector", "Matches"], &mut self.dock_tab, |ui, tab, _app| match tab {
+        let (main_rect, _) = super::dock(ui, app, "file-dock", &["Inspector", "Matches"], &mut self.dock_tab, |ui, tab, _app| match tab {
             0 => match self.view.selection.or(self.view.hover) {
                 Some(r) => actions = inspector::show(ui, &model, r, &RuntimeFacts::default(), false),
                 None => {
@@ -69,11 +73,12 @@ impl FilePlace {
                 }
             }
         });
-        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
+        let mut main_ui = crate::widgets::split::child_in(ui, main_rect);
+        egui::CentralPanel::default().frame(egui::Frame::NONE).show(&mut main_ui, |ui| {
             let style = app.tokens.diagram_style();
             let settings = app.diagram_settings();
             let model2 = model.clone();
-            let out = viewport::widget::show(ui, &mut self.view, &model, &mut self.overlays, &style, &settings, &|_, _| {}, &mut |ui, target| {
+            let out = viewport::Diagram { model: &model, style: &style, settings: &settings }.show(ui, &mut self.view, &mut self.overlays, &|_, _| {}, &mut |ui, target| {
                 crate::app::diagram_context_menu(ui, &model2, target, &mut actions);
             });
             app.last_diagram_viewport = out.viewport;
@@ -85,12 +90,9 @@ impl FilePlace {
             }
         });
         for a in actions {
-            match a {
-                InspectorAction::Select(r) => {
-                    self.view.select(Some(r));
-                    self.view.fit_refs(&model, std::iter::once(r));
-                }
-                _ => {}
+            if let InspectorAction::Select(r) = a {
+                self.view.select(Some(r));
+                self.view.fit_refs(&model, std::iter::once(r));
             }
         }
         app.status_hint = "Drag/wheel: pan & zoom · 0 fit · F fit selection · Tab next element · Ctrl+F find · ? help".into();

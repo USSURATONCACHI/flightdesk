@@ -2,15 +2,16 @@
 
 use crate::places::*;
 
+/// What a tab shows. The heavy places are boxed so the enum (and every history entry) stays small.
 pub enum Place {
     Definitions(DefinitionsPlace),
-    Definition(DefinitionPlace),
-    Instance(InstancePlace),
-    Search(SearchPlace),
-    Incidents(IncidentsPlace),
+    Definition(Box<DefinitionPlace>),
+    Instance(Box<InstancePlace>),
+    Search(Box<SearchPlace>),
+    Incidents(Box<IncidentsPlace>),
     Batches(BatchesPlace),
     Settings(SettingsPlace),
-    File(FilePlace),
+    File(Box<FilePlace>),
 }
 
 /// A navigation request; turned into a `Place` by the app.
@@ -91,18 +92,6 @@ impl Place {
             Place::Batches(_) => "Batches".into(),
             Place::Settings(_) => "Settings".into(),
             Place::File(p) => p.title(),
-        }
-    }
-    pub fn nav(&self) -> Nav {
-        match self {
-            Place::Definitions(_) => Nav::Definitions,
-            Place::Definition(p) => Nav::Definition { id: p.def_id.clone() },
-            Place::Instance(p) => Nav::Instance { id: p.id.clone() },
-            Place::Search(p) => Nav::Search { query: p.query.clone() },
-            Place::Incidents(_) => Nav::Incidents,
-            Place::Batches(_) => Nav::Batches,
-            Place::Settings(_) => Nav::Settings,
-            Place::File(p) => Nav::File { path: p.path.clone() },
         }
     }
     pub fn has_diagram(&self) -> bool {

@@ -4,7 +4,7 @@ use crate::app::App;
 use crate::net::Loader;
 use crate::query::{self, Mode, Query};
 use crate::state::{Nav, NavMode};
-use crate::widgets::{heading_row, loader_status_inline, pill, progress_line, state_color, state_label, Confirm, ToastKind};
+use crate::widgets::{cell, heading_row, loader_status_inline, pill, progress_line, state_color, state_label, table_area, Confirm, ToastKind};
 use camunda::{HistoricProcessInstance, VariableInstance};
 use egui::{Key, Modifiers, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -29,6 +29,12 @@ impl From<HistoricProcessInstance> for Row {
         Row { id: h.id, business_key: h.business_key, definition_id: h.process_definition_id, definition_key: h.process_definition_key.unwrap_or_default(), version: h.process_definition_version, state: h.state.unwrap_or_else(|| "ACTIVE".into()), start: h.start_time, end: h.end_time, duration_ms: h.duration_in_millis }
     }
 }
+
+/// A bulk operation over selected instance ids, run after confirmation.
+type BatchFn = Box<dyn FnOnce(&mut App, Vec<String>) + Send>;
+
+/// variable name → (instance id → value), for the variable columns.
+type VarColumns = HashMap<String, HashMap<String, VariableInstance>>;
 
 pub struct SearchPlace {
     pub query: String,
@@ -242,7 +248,7 @@ impl SearchPlace {
         let mut open: Option<(String, NavMode)> = None;
         let mut dock_tab = 0usize;
         let cursor_row = self.rows.data.as_ref().and_then(|r| r.get(self.cursor).cloned());
-        super::dock(ui, app, "search-dock", &["Preview", "Syntax"], &mut dock_tab, |ui, tab, app| {
+        let (main_rect, _) = super::dock(ui, app, "search-dock", &["Preview", "Syntax"], &mut dock_tab, |ui, tab, app| {
             if tab == 1 {
                 ui.label(RichText::new("Query syntax").strong());
                 for (f, d) in query::FIELDS {
@@ -300,7 +306,8 @@ impl SearchPlace {
             }
         });
 
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(tokens.bg0).inner_margin(16.0)).show(ui, |ui| {
+        let mut main_ui = crate::widgets::split::child_in(ui, main_rect);
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(tokens.bg0).inner_margin(16.0)).show(&mut main_ui, |ui| {
             let top = ui.max_rect();
             if self.rows.is_loading() {
                 progress_line(ui, egui::Rect::from_min_size(top.min - egui::Vec2::new(16.0, 16.0), egui::Vec2::new(top.width() + 32.0, 2.0)), tokens.accent);
@@ -309,7 +316,7 @@ impl SearchPlace {
             ui.add_space(6.0);
             // ---- query bar ----
             let mut run_now = false;
-            let edit_id = egui::Id::new("search-query");
+            let edit_id = egui::Id::unique("search-query");
             ui.horizontal(|ui| {
                 let edit = egui::TextEdit::singleline(&mut self.query).id(edit_id).hint_text("def:key  bk:ABC*  var.amount>1000  act:Task_x  state:finished  …   (Enter to search, Tab to accept a suggestion)").desired_width(ui.available_width() - 330.0).font(egui::TextStyle::Monospace);
                 let out = edit.show(ui);
@@ -526,9 +533,12 @@ impl SearchPlace {
                 });
             }
             let var_cols = self.var_columns.clone();
-            let var_values: HashMap<String, HashMap<String, VariableInstance>> = var_cols.iter().filter_map(|n| self.var_values.get(n).and_then(|l| l.data.clone()).map(|d| (n.clone(), d))).collect();
+            let var_values: VarColumns = var_cols.iter().filter_map(|n| self.var_values.get(n).and_then(|l| l.data.clone()).map(|d| (n.clone(), d))).collect();
             let shift = ui.input(|i| i.modifiers.shift);
             let h = ui.available_height() - 28.0;
+            let min_w = 760.0 + 140.0 * var_cols.len() as f32;
+            let mut toggle: Option<String> = None;
+            table_area(ui, "search-table", min_w, |ui| {
             let mut table = TableBuilder::new(ui)
                 .striped(true)
                 .resizable(true)
@@ -545,7 +555,6 @@ impl SearchPlace {
                 table = table.column(Column::initial(140.0).at_least(60.0));
             }
             table = table.column(Column::remainder()).max_scroll_height(h.max(120.0)).scroll_to_row(self.cursor, None);
-            let mut toggle: Option<String> = None;
             table
                 .header(24.0, |mut hr| {
                     hr.col(|ui| {
@@ -583,13 +592,13 @@ impl SearchPlace {
                             }
                         });
                         row.col(|ui| {
-                            ui.label(RichText::new(r.business_key.clone().unwrap_or_else(|| "—".into())).size(12.0));
+                            cell(ui, RichText::new(r.business_key.clone().unwrap_or_else(|| "—".into())).size(12.0));
                         });
                         row.col(|ui| {
-                            ui.label(RichText::new(crate::util::short_uuid(&r.id)).monospace().size(11.5)).on_hover_text(&r.id);
+                            cell(ui, RichText::new(crate::util::short_uuid(&r.id)).monospace().size(11.5)).on_hover_text(&r.id);
                         });
                         row.col(|ui| {
-                            ui.label(RichText::new(format!("{} v{}", r.definition_key, r.version.unwrap_or(0))).size(12.0));
+                            cell(ui, RichText::new(format!("{} v{}", r.definition_key, r.version.unwrap_or(0))).size(12.0));
                         });
                         row.col(|ui| {
                             ui.label(RichText::new(state_label(&r.state)).color(state_color(&r.state, &tokens)).size(12.0));
@@ -662,6 +671,7 @@ impl SearchPlace {
                         });
                     });
                 });
+            });
             if let Some(id) = toggle {
                 if !self.selected.remove(&id) {
                     self.selected.insert(id);
@@ -696,7 +706,7 @@ impl SearchPlace {
         egui::Frame::new().fill(tokens.accent.gamma_multiply(0.12)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 ui.label(RichText::new(format!("{n} selected")).strong());
-                let batch = |app: &mut App, title: &str, body: String, label: &str, f: Box<dyn FnOnce(&mut App, Vec<String>) + Send>| {
+                let batch = |app: &mut App, title: &str, body: String, label: &str, f: BatchFn| {
                     let ids2 = ids.clone();
                     app.confirm = Some(Confirm::new(title, body, label, move |app: &mut App| f(app, ids2)));
                 };

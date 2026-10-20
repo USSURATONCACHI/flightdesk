@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crate::state::{Nav, NavMode};
-use crate::widgets::{badge, filter_box, heading_row, progress_line};
+use crate::widgets::{badge, cell, filter_box, heading_row, progress_line, table_area};
 use camunda::{ProcessDefinition, ProcessDefinitionStatistics};
 use egui::{Key, Modifiers, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -45,7 +45,7 @@ impl DefinitionsPlace {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.checkbox(&mut self.show_all_versions, "All versions");
                     ui.add_space(8.0);
-                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::new("defs-filter"), &mut self.filter, "Filter by key or name", &mut self.filter_focus));
+                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique("defs-filter"), &mut self.filter, "Filter by key or name", &mut self.filter_focus));
                 });
             });
             ui.add_space(8.0);
@@ -80,6 +80,7 @@ impl DefinitionsPlace {
                 }
             });
             let tokens = app.tokens.clone();
+            table_area(ui, "defs-table", 760.0, |ui| {
             let table = TableBuilder::new(ui)
                 .striped(true)
                 .resizable(true)
@@ -109,10 +110,10 @@ impl DefinitionsPlace {
                         let r = &rows[i];
                         row.set_selected(i == self.cursor);
                         row.col(|ui| {
-                            ui.label(r.def.display_name());
+                            cell(ui, r.def.display_name());
                         });
                         row.col(|ui| {
-                            ui.label(RichText::new(&r.def.key).monospace().size(12.0));
+                            cell(ui, RichText::new(&r.def.key).monospace().size(12.0));
                         });
                         row.col(|ui| {
                             let v = if self.show_all_versions || r.versions <= 1 { format!("v{}", r.def.version) } else { format!("v{} (+{})", r.def.version, r.versions - 1) };
@@ -169,6 +170,7 @@ impl DefinitionsPlace {
                         });
                     });
                 });
+            });
             if let Some((id, mode)) = open {
                 app.navigate(Nav::Definition { id }, mode);
             }

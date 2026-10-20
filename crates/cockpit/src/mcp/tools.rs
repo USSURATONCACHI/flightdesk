@@ -283,6 +283,7 @@ fn diagram_json_model(view: &crate::viewport::DiagramView, m: &bpmn::Model) -> V
     json!({
         "loaded": true, "elements": m.flow_nodes().count(), "flows": m.flows.len(),
         "selection": sel, "zoom": view.camera.target.zoom, "center": [view.camera.target.center.x, view.camera.target.center.y],
+        "camera_animating": view.camera.is_animating(),
         "find": if view.find.open { json!({"query": view.find.query, "matches": view.find.matches.len(), "current": view.find.cursor}) } else { Value::Null },
         "minimap": view.show_minimap, "show_ids": view.show_ids, "focused": view.focused,
     })
@@ -485,13 +486,14 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 let size = arg_i(&a, "page_size").unwrap_or(50).clamp(1, 500) as usize;
                 let defs = app.cache.all_defs.data.clone().unwrap_or_default();
                 let warnings = q.warnings.clone();
+                let normalized = crate::query::print(&q);
                 match mode {
                     crate::query::Mode::Runtime => {
                         let rq = crate::query::build_runtime(&q, &defs);
                         engine(app, reply.clone(), move |c| async move {
                             let rows = c.process_instances(&rq, page * size, size).await?;
                             let count = c.process_instances_count(&rq).await?;
-                            Ok(json!({"mode": "runtime", "count": count, "page": page, "page_size": size, "warnings": warnings, "instances": rows, "request": rq}))
+                            Ok(json!({"mode": "runtime", "count": count, "page": page, "page_size": size, "query": normalized, "warnings": warnings, "instances": rows, "request": rq}))
                         });
                     }
                     crate::query::Mode::History => {
@@ -499,7 +501,7 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                         engine(app, reply.clone(), move |c| async move {
                             let rows = c.history_process_instances(&hq, page * size, size).await?;
                             let count = c.history_process_instances_count(&hq).await?;
-                            Ok(json!({"mode": "history", "count": count, "page": page, "page_size": size, "warnings": warnings, "instances": rows, "request": hq}))
+                            Ok(json!({"mode": "history", "count": count, "page": page, "page_size": size, "query": normalized, "warnings": warnings, "instances": rows, "request": hq}))
                         });
                     }
                 }
@@ -924,7 +926,7 @@ pub fn dispatch(app: &mut App, call: McpCall) {
             "ui_fit" => {
                 let what = need(&a, "what")?.to_string();
                 let eid = arg_str(&a, "element_id").map(String::from);
-                let r = with_diagram(app, |view, m| match what.as_str() {
+                with_diagram(app, |view, m| match what.as_str() {
                     "all" => {
                         view.fit_all();
                         Ok(())
@@ -947,7 +949,6 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                     }
                     other => Err(format!("unknown fit target {other}")),
                 })??;
-                let _ = r;
                 Ok(Some(json!({"ok": true})))
             }
             "ui_zoom" => {

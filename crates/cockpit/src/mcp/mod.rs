@@ -6,8 +6,7 @@ pub mod tools;
 
 use serde_json::{json, Value};
 use std::collections::VecDeque;
-use std::io::Read;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -19,12 +18,15 @@ pub struct McpCall {
     pub reply: Reply,
 }
 
+/// Outcome of a tool call: a JSON value or an error message for the agent.
+pub type ToolResult = Result<Value, String>;
+
 /// Reply handle; cloneable so async completions can answer later.
 #[derive(Clone)]
-pub struct Reply(SyncSender<Result<Value, String>>);
+pub struct Reply(SyncSender<ToolResult>);
 
 impl Reply {
-    pub fn new(tx: SyncSender<Result<Value, String>>) -> Self {
+    pub fn new(tx: SyncSender<ToolResult>) -> Self {
         Self(tx)
     }
     pub fn ok(&self, v: Value) {
@@ -33,7 +35,7 @@ impl Reply {
     pub fn err(&self, e: impl Into<String>) {
         let _ = self.0.send(Err(e.into()));
     }
-    pub fn send(&self, r: Result<Value, String>) {
+    pub fn send(&self, r: ToolResult) {
         let _ = self.0.send(r);
     }
 }
@@ -212,7 +214,7 @@ fn handle_message(m: &Value, queue: &Queue, ctx: &egui::Context, stats: &Arc<Mut
                 stats.lock().unwrap().errors += 1;
                 return Some(rpc_ok(id, tool_result(Err(format!("unknown tool {name}")))));
             }
-            let (tx, rx): (SyncSender<Result<Value, String>>, Receiver<Result<Value, String>>) = sync_channel(1);
+            let (tx, rx) = sync_channel::<ToolResult>(1);
             queue.lock().unwrap().push_back(McpCall { tool: name.clone(), args, reply: Reply(tx) });
             ctx.request_repaint();
             let r = match rx.recv_timeout(Duration::from_secs(180)) {
@@ -237,7 +239,7 @@ fn handle_message(m: &Value, queue: &Queue, ctx: &egui::Context, stats: &Arc<Mut
 }
 
 /// Convert a tool outcome into MCP `CallToolResult`. A `{"_png_base64": "...", ...}` value becomes image content.
-fn tool_result(r: Result<Value, String>) -> Value {
+fn tool_result(r: ToolResult) -> Value {
     match r {
         Ok(v) => {
             if let Some(png) = v.get("_png_base64").and_then(|p| p.as_str()) {

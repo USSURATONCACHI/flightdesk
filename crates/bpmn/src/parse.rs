@@ -366,7 +366,7 @@ impl<'a> Parser<'a> {
                 "association" => {
                     self.push_flow(&c, FlowKind::Association);
                 }
-                "laneSet" | "childLaneSet" => self.parse_lane_set(&c, process_id, parent_id, depth),
+                "laneSet" | "childLaneSet" => self.parse_lane_set(&c, process_id, parent_id),
                 "textAnnotation" => {
                     let idx = self.push_element(&c, ElementKind::TextAnnotation, Some(process_id), parent_id, depth);
                     self.model.elements[idx].name = child_text(&c, "text");
@@ -406,7 +406,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_lane_set(&mut self, node: &Node, process_id: &str, parent_id: Option<&str>, depth: u16) {
+    fn parse_lane_set(&mut self, node: &Node, process_id: &str, parent_id: Option<&str>) {
         for lane in children(node, "lane") {
             let idx = self.push_element(&lane, ElementKind::Lane, Some(process_id), parent_id, 1);
             for r in children(&lane, "flowNodeRef") {
@@ -416,7 +416,7 @@ impl<'a> Parser<'a> {
             }
             if let Some(cls) = child(&lane, "childLaneSet") {
                 let my_id = self.model.elements[idx].id.clone();
-                self.parse_lane_set(&cls, process_id, Some(&my_id), depth);
+                self.parse_lane_set(&cls, process_id, Some(&my_id));
             }
         }
     }

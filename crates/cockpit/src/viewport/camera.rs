@@ -141,8 +141,7 @@ mod tests {
     }
     #[test]
     fn zoom_keeps_anchor_fixed() {
-        let mut c = Camera::default();
-        c.target = CameraPose { center: Pos2::new(500.0, 300.0), zoom: 0.5 };
+        let mut c = Camera { target: CameraPose { center: Pos2::new(500.0, 300.0), zoom: 0.5 }, ..Default::default() };
         c.snap();
         let anchor = Pos2::new(300.0, 200.0);
         let before = c.screen_to_world_target(vp(), anchor);

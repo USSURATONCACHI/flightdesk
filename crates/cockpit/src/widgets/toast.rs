@@ -15,7 +15,7 @@ pub struct Toast {
     pub details: Option<String>,
     pub created: Instant,
     pub ttl: Option<f32>,
-    pub undo: Option<Box<dyn FnOnce(&mut crate::app::App) + Send>>,
+    pub undo: Option<super::AppAction>,
     pub id: u64,
     pub hovered: bool,
     pub expanded: bool,
@@ -28,7 +28,7 @@ pub struct Toasts {
 }
 
 pub enum ToastAction {
-    Undo(Box<dyn FnOnce(&mut crate::app::App) + Send>),
+    Undo(super::AppAction),
 }
 
 impl Toasts {
@@ -38,7 +38,7 @@ impl Toasts {
     pub fn error(&mut self, text: impl Into<String>, details: Option<String>) -> u64 {
         self.push_full(ToastKind::Error, text, details, None)
     }
-    pub fn push_full(&mut self, kind: ToastKind, text: impl Into<String>, details: Option<String>, undo: Option<Box<dyn FnOnce(&mut crate::app::App) + Send>>) -> u64 {
+    pub fn push_full(&mut self, kind: ToastKind, text: impl Into<String>, details: Option<String>, undo: Option<super::AppAction>) -> u64 {
         self.next_id += 1;
         let ttl = match kind {
             ToastKind::Error => None,
@@ -64,7 +64,7 @@ impl Toasts {
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
         let mut remove: Vec<u64> = vec![];
-        egui::Area::new(egui::Id::new("toasts")).order(egui::Order::Foreground).anchor(Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -34.0)).interactable(true).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("toasts")).order(egui::Order::Foreground).anchor(Align2::RIGHT_BOTTOM, Vec2::new(-16.0, -34.0)).interactable(true).show(ctx, |ui| {
             ui.set_max_width(420.0);
             ui.vertical(|ui| {
                 for t in self.items.iter_mut().rev() {

@@ -18,31 +18,32 @@ pub use search::SearchPlace;
 pub use settings::SettingsPlace;
 
 use crate::app::App;
+use crate::widgets::split::{child_in, split, Side};
 use egui::Ui;
 
-/// Right-hand dock frame with tab strip. Returns the inner ui result.
-pub fn dock<R>(ui: &mut Ui, app: &mut App, id: &str, tabs: &[&str], current: &mut usize, content: impl FnOnce(&mut Ui, usize, &mut App) -> R) -> Option<R> {
+/// Right-hand dock with a tab strip. Returns the rect left for the main area and the content's
+/// result (`None` when the dock is hidden). The dock has an exact width, so fill-width widgets
+/// inside it never push it wider (see `widgets::split`).
+pub fn dock<R>(ui: &mut Ui, app: &mut App, id: &str, tabs: &[&str], current: &mut usize, content: impl FnOnce(&mut Ui, usize, &mut App) -> R) -> (egui::Rect, Option<R>) {
     if !app.dock_visible {
-        return None;
+        return (ui.available_rect_before_wrap(), None);
     }
-    let mut out = None;
-    let max_w = (ui.available_width() * 0.55).max(300.0);
-    egui::Panel::right("dock").resizable(true).default_size(app.settings.dock_width).min_size(280.0).max_size(max_w).frame(egui::Frame::new().fill(app.tokens.bg1)).show(ui, |ui| {
-        let w = ui.available_width();
-        ui.set_max_width(w);
-        // The panel width itself is persisted by egui (eframe storage); settings.dock_width is only the first-run default.
-        egui::Frame::new().inner_margin(egui::Margin { left: 8, right: 8, top: 6, bottom: 2 }).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for (i, t) in tabs.iter().enumerate() {
-                    let selected = *current == i;
-                    let label = if i < 9 { format!("{t}") } else { t.to_string() };
-                    let r = ui.selectable_label(selected, label);
-                    let r = if i < 9 { r.on_hover_text(format!("Ctrl+{}", i + 1)) } else { r };
-                    if r.clicked() {
-                        *current = i;
-                    }
+    let before = app.settings.dock_width;
+    let sp = split(ui, egui::Id::unique(("dock-split", id)), Side::Right, &mut app.settings.dock_width, 280.0, 0.6);
+    if (app.settings.dock_width - before).abs() > 0.5 {
+        app.settings_dirty = true;
+    }
+    ui.painter().rect_filled(sp.pane, 0.0, app.tokens.bg1);
+    let mut pane = child_in(ui, sp.pane);
+    let out = egui::Frame::new().inner_margin(egui::Margin { left: 8, right: 8, top: 6, bottom: 2 }).show(&mut pane, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            for (i, t) in tabs.iter().enumerate() {
+                let r = ui.selectable_label(*current == i, *t);
+                let r = if i < 9 { r.on_hover_text(format!("Ctrl+{}", i + 1)) } else { r };
+                if r.clicked() {
+                    *current = i;
                 }
-            });
+            }
         });
         ui.separator();
         // Ctrl+1..9 switch dock tabs
@@ -54,13 +55,13 @@ pub fn dock<R>(ui: &mut Ui, app: &mut App, id: &str, tabs: &[&str], current: &mu
                 }
             }
         });
+        let w = ui.available_width();
         egui::ScrollArea::vertical().id_salt((id, *current)).auto_shrink([false, false]).show(ui, |ui| {
-            egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
-                out = Some(content(ui, *current, app));
-            });
-        });
+            ui.set_width(w);
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| content(ui, *current, app)).inner
+        }).inner
     });
-    out
+    (sp.main, Some(out.inner))
 }
 
 /// Shows loading / error status for a loader at the top of a panel.
