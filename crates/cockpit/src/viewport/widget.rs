@@ -536,13 +536,14 @@ fn show_impl(
 
     // ---- overlays: find bar, minimap, zoom indicator, tooltip ----
     find_bar(ui, view, model, style, rect, &mut out);
+    find_legend(ui, view, model, style, rect);
     if view.show_minimap {
         minimap(ui, view, model, overlays, style, rect);
     }
     zoom_indicator(ui, view, model, rect, style, settings);
     if let Some(h) = view.hover {
         if now - view.hover_since >= settings.hover_delay && !response.dragged() && !ctx.input(|i| i.pointer.any_down()) {
-            tooltip(ui, view, model, overlays, h, tooltip_extra);
+            tooltip(ui, view, model, overlays, style, h, tooltip_extra);
         } else {
             ctx.request_repaint_after(std::time::Duration::from_millis(60));
         }
@@ -995,7 +996,7 @@ fn zoom_dial(ui: &mut Ui, view: &mut DiagramView, dial: Rect, viewport: Rect, st
     painter.line_segment([Pos2::new(cx, dial.min.y + 3.0), Pos2::new(cx, dial.max.y - 3.0)], Stroke::new(2.0, style.selection));
 }
 
-fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, h: Ref, extra: TooltipExtra<'_>) {
+fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, style: &DiagramStyle, h: Ref, extra: TooltipExtra<'_>) {
     let ctx = ui.ctx().clone();
     let pos = view.hover_pos + Vec2::new(14.0, 18.0);
     egui::Area::new(view.id.with("tooltip")).order(egui::Order::Tooltip).fixed_pos(pos).interactable(false).show(&ctx, |ui| {
@@ -1031,6 +1032,7 @@ fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, 
                         ui.label(egui::RichText::new(imp).monospace().size(11.0));
                     }
                     extra(ui, &e.id);
+                    find_explanation(ui, view, model, style, h);
                 }
                 Ref::Flow(i) => {
                     let f = &model.flows[i];
@@ -1045,7 +1047,131 @@ fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, 
                     if let Some(c) = &f.condition {
                         ui.label(egui::RichText::new(&c.text).monospace().size(11.0));
                     }
+                    find_explanation(ui, view, model, style, h);
                 }
+            }
+        });
+    });
+}
+
+fn dot(ui: &mut Ui, color: egui::Color32) {
+    let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+    ui.painter().circle_filled(r.center(), 4.0, color);
+}
+
+/// Striped swatch for the "both" legend entry.
+fn striped_dot(ui: &mut Ui, a: egui::Color32, b: egui::Color32) {
+    let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
+    let p = ui.painter().with_clip_rect(r);
+    p.rect_filled(r, 2.0, a);
+    let mut x = r.min.x - r.height();
+    while x < r.max.x {
+        p.line_segment([Pos2::new(x, r.min.y), Pos2::new(x + r.height(), r.max.y)], Stroke::new(2.0, b));
+        x += 4.0;
+    }
+}
+
+/// Colour-coded lines in the hover tooltip saying why a highlighted element matched the find query.
+fn find_explanation(ui: &mut Ui, view: &DiagramView, model: &Model, style: &DiagramStyle, h: Ref) {
+    if !view.find.active() {
+        return;
+    }
+    let el = view.find.matches.iter().find(|m| m.target == h);
+    let hits: Vec<&crate::history::InstanceHit> = match h {
+        Ref::Element(i) => view.find.instance_hits.iter().filter(|x| x.activity_id == model.elements[i].id).collect(),
+        Ref::Flow(_) => vec![],
+    };
+    let is_current = view.find.current_in(model) == Some(h);
+    if el.is_none() && hits.is_empty() {
+        return;
+    }
+    ui.separator();
+    if let Some(m) = el {
+        ui.horizontal(|ui| {
+            dot(ui, style.matched);
+            ui.label(egui::RichText::new(format!("Element matches: {} “{}”", m.field, crate::util::ellipsize(&m.snippet, 60))).size(11.5));
+        });
+    }
+    if !hits.is_empty() {
+        ui.horizontal(|ui| {
+            dot(ui, style.external);
+            let n = hits.len();
+            ui.label(egui::RichText::new(format!("{n} running instance{} here match{}:", if n == 1 { "" } else { "s" }, if n == 1 { "es" } else { "" })).size(11.5));
+        });
+        for x in hits.iter().take(4) {
+            let what = match &x.business_key {
+                Some(bk) => format!("business key {bk}"),
+                None => format!("id {}", x.process_instance_id),
+            };
+            ui.label(egui::RichText::new(format!("    {what}")).monospace().size(11.0));
+        }
+        if hits.len() > 4 {
+            ui.label(egui::RichText::new(format!("    … and {} more", hits.len() - 4)).weak().size(11.0));
+        }
+    }
+    if el.is_some() && !hits.is_empty() {
+        ui.horizontal(|ui| {
+            striped_dot(ui, style.matched, style.external);
+            ui.label(egui::RichText::new("striped: both the element and an instance match").weak().size(11.0));
+        });
+    }
+    if is_current {
+        ui.horizontal(|ui| {
+            dot(ui, style.current_match);
+            let n = view.find.targets(model).len();
+            ui.label(egui::RichText::new(format!("Current match {} of {n} (Enter / Shift+Enter cycle)", view.find.cursor + 1)).size(11.5));
+        });
+    }
+}
+
+/// Legend in the top-right corner of the canvas while a find query has matches; lists only
+/// the colours currently on screen.
+fn find_legend(ui: &mut Ui, view: &DiagramView, model: &Model, style: &DiagramStyle, rect: Rect) {
+    if !view.find.active() {
+        return;
+    }
+    let el_set: std::collections::HashSet<Ref> = view.find.matches.iter().map(|m| m.target).collect();
+    let inst_set = view.find.instance_match_refs(model);
+    let both = el_set.intersection(&inst_set).count();
+    let el_only = el_set.len() - both;
+    let inst_only = inst_set.len() - both;
+    let current = view.find.current_in(model);
+    if el_only == 0 && inst_only == 0 && both == 0 {
+        return;
+    }
+    let size = Vec2::new(236.0, 0.0);
+    let pos = Pos2::new(rect.max.x - size.x - 12.0, rect.min.y + 10.0);
+    let legend_rect = Rect::from_min_size(pos, Vec2::new(size.x, 120.0));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(legend_rect).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
+        egui::Frame::new().fill(ui.visuals().window_fill.gamma_multiply(0.94)).stroke(ui.visuals().window_stroke).corner_radius(CornerRadius::same(6)).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
+            ui.set_width(size.x - 16.0);
+            ui.spacing_mut().item_spacing.y = 3.0;
+            let row = |ui: &mut Ui, text: String| {
+                ui.label(egui::RichText::new(text).size(11.0));
+            };
+            if el_only > 0 {
+                ui.horizontal(|ui| {
+                    dot(ui, style.matched);
+                    row(ui, format!("element text matches ({el_only})"));
+                });
+            }
+            if inst_only > 0 {
+                ui.horizontal(|ui| {
+                    dot(ui, style.external);
+                    row(ui, format!("a running instance here matches ({inst_only})"));
+                });
+            }
+            if both > 0 {
+                ui.horizontal(|ui| {
+                    striped_dot(ui, style.matched, style.external);
+                    row(ui, format!("both ({both})"));
+                });
+            }
+            if current.is_some() {
+                ui.horizontal(|ui| {
+                    dot(ui, style.current_match);
+                    row(ui, "current match · Enter cycles".to_string());
+                });
             }
         });
     });
