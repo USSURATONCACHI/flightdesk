@@ -200,8 +200,9 @@ impl Settings {
         }
     }
 
-    pub fn engine(&self) -> &EngineProfile {
-        &self.engines[self.last_engine.min(self.engines.len().saturating_sub(1))]
+    /// The last-used connection, or a default profile when none is saved.
+    pub fn engine(&self) -> EngineProfile {
+        self.engines.get(self.last_engine.min(self.engines.len().saturating_sub(1))).cloned().unwrap_or_default()
     }
 }
 

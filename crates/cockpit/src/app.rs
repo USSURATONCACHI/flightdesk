@@ -107,7 +107,7 @@ impl App {
         let tokens = Self::tokens_for(settings.theme, egui_ctx);
         tokens.apply(egui_ctx, settings.density);
         egui_ctx.set_zoom_factor(scale);
-        let profile = settings.engine().clone();
+        let profile = settings.engine();
         Self {
             settings,
             settings_dirty: false,
@@ -215,6 +215,12 @@ impl App {
     // ---------- connection ----------
 
     pub fn connect_to(&mut self, profile: EngineProfile) {
+        self.connect_with(profile, None);
+    }
+
+    /// Connect using `profile`; on success it is stored in `slot` of the saved connections when
+    /// given (the entry being edited), otherwise merged by URL and user.
+    pub fn connect_with(&mut self, profile: EngineProfile, slot: Option<usize>) {
         let cfg = Config {
             base_url: profile.url.clone(),
             auth: if profile.user.is_empty() { camunda::Auth::None } else { camunda::Auth::Basic { user: profile.user.clone(), password: profile.password.clone() } },
@@ -243,14 +249,18 @@ impl App {
                         app.latency_ms = Some(started.elapsed().as_millis());
                         app.conn = ConnStatus::Connected { version: v.version.clone() };
                         app.connect.error = None;
-                        // persist profile
+                        // persist profile: the edited slot wins, otherwise merge by URL + user
                         let p = app.profile.clone();
-                        if let Some(i) = app.settings.engines.iter().position(|e| e.url == p.url && e.user == p.user) {
-                            app.settings.engines[i] = p;
-                            app.settings.last_engine = i;
-                        } else {
-                            app.settings.engines.push(p);
-                            app.settings.last_engine = app.settings.engines.len() - 1;
+                        let existing = slot.filter(|&i| i < app.settings.engines.len()).or_else(|| app.settings.engines.iter().position(|e| e.url == p.url && e.user == p.user));
+                        match existing {
+                            Some(i) => {
+                                app.settings.engines[i] = p;
+                                app.settings.last_engine = i;
+                            }
+                            None => {
+                                app.settings.engines.push(p);
+                                app.settings.last_engine = app.settings.engines.len() - 1;
+                            }
                         }
                         app.settings_dirty = true;
                         app.cache = Cache::default();

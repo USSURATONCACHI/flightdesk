@@ -146,12 +146,10 @@ fn main() -> eframe::Result<()> {
                 if let Some(existing) = app.settings.engines.iter().find(|e| e.url == p.url) {
                     p.name = existing.name.clone();
                 }
-                app.connect.profile = p.clone();
                 app.connect.connecting = true;
                 app.connect_to(p);
             } else if app.settings.auto_connect && args.bpmn.is_none() {
-                let p = app.settings.engine().clone();
-                app.connect.profile = p.clone();
+                let p = app.settings.engine();
                 app.connect.connecting = true;
                 app.connect_to(p);
             }

@@ -1180,7 +1180,6 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 }
                 let url = need(&a, "url")?;
                 let p = crate::settings::EngineProfile { name: "mcp".into(), url: camunda::normalize_base_url(url), user: arg_str(&a, "user").unwrap_or("").into(), password: arg_str(&a, "password").unwrap_or("").into(), ..Default::default() };
-                app.connect.profile = p.clone();
                 app.connect.connecting = true;
                 app.disconnect();
                 app.connect_to(p);

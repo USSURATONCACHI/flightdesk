@@ -68,7 +68,6 @@ impl SettingsPlace {
                             });
                         });
                         if let Some(p) = connect_req {
-                            app.connect.profile = p.clone();
                             app.connect.connecting = true;
                             app.disconnect();
                             app.connect_to(p);
