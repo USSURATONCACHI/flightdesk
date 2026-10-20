@@ -54,6 +54,10 @@ impl Camera {
     pub fn visible_world_rect(&self, viewport: Rect) -> Rect {
         Rect::from_min_max(self.screen_to_world(viewport, viewport.min), self.screen_to_world(viewport, viewport.max))
     }
+    /// What will be visible once the running camera animation has settled.
+    pub fn visible_world_rect_target(&self, viewport: Rect) -> Rect {
+        Rect::from_min_max(self.screen_to_world_target(viewport, viewport.min), self.screen_to_world_target(viewport, viewport.max))
+    }
     pub fn zoom(&self) -> f32 {
         self.current.zoom
     }

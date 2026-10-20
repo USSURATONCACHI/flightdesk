@@ -121,6 +121,8 @@ pub struct DiagramView {
     /// References whose find highlight is on or still fading out.
     find_fade: HashSet<Ref>,
     find_dim_primed: bool,
+    /// Screen rect the diagram was last drawn in (for "is this on screen?" questions).
+    pub last_viewport: Rect,
     want_focus: bool,
     badges: Vec<BadgeHit>,
     /// Zoom-independent label layout cache.
@@ -163,6 +165,7 @@ impl DiagramView {
             fit_tokens_marker: false,
             find_fade: HashSet::new(),
             find_dim_primed: false,
+            last_viewport: Rect::NOTHING,
             id,
         }
     }
@@ -197,6 +200,37 @@ impl DiagramView {
                 self.camera.target.zoom = 0.9;
             }
         }
+    }
+    /// Make find target `index` current and glide the camera onto it (edge-arrow click, MCP).
+    pub fn go_to_match(&mut self, m: &Model, index: usize) -> Option<Ref> {
+        let targets = self.find.targets(m);
+        let r = *targets.get(index)?;
+        self.find.cursor = index;
+        let c = ref_center(m, r)?;
+        self.camera.target.center = c;
+        if self.camera.target.zoom < 0.6 {
+            self.camera.target.zoom = 0.9;
+        }
+        Some(r)
+    }
+    /// Find targets that lie outside the last drawn viewport (index into `find.targets`).
+    /// `settled` judges against where the camera is heading rather than where it is now, so a
+    /// caller that just moved the camera gets the answer for the end of the glide.
+    pub fn offscreen_matches(&self, m: &Model, settled: bool) -> Vec<usize> {
+        let visible = if settled { self.camera.visible_world_rect_target(self.last_viewport) } else { self.camera.visible_world_rect(self.last_viewport) };
+        self.find
+            .targets(m)
+            .iter()
+            .enumerate()
+            .filter(|(_, &r)| {
+                let b = match r {
+                    Ref::Element(j) => m.elements[j].bounds,
+                    Ref::Flow(j) => m.flows[j].bounds,
+                };
+                b.is_valid() && !visible.intersects(Rect::from_min_size(Pos2::new(b.x, b.y), Vec2::new(b.w, b.h)))
+            })
+            .map(|(i, _)| i)
+            .collect()
     }
     pub fn select(&mut self, r: Option<Ref>) {
         self.selection = r;
@@ -292,6 +326,7 @@ fn show_impl(
 ) -> DiagramOutput {
     let mut out = DiagramOutput::default();
     let rect = ui.available_rect_before_wrap();
+    view.last_viewport = rect;
     out.viewport = rect;
     let response = ui.interact(rect, view.id, Sense::click_and_drag());
     let ctx = ui.ctx().clone();
@@ -535,6 +570,7 @@ fn show_impl(
     if view.show_minimap {
         minimap(ui, view, model, overlays, style, rect);
     }
+    find_edge_arrows(ui, view, model, style, rect);
     zoom_indicator(ui, view, model, rect, style, settings);
     if let Some(h) = view.hover {
         if now - view.hover_since >= settings.hover_delay && !response.dragged() && !ctx.input(|i| i.pointer.any_down()) {
@@ -900,6 +936,116 @@ fn find_bar(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &DiagramS
     }
 }
 
+/// World-space centre of an element or flow, if its geometry is known.
+fn ref_center(model: &Model, r: Ref) -> Option<Pos2> {
+    let b = match r {
+        Ref::Element(i) => model.elements[i].bounds,
+        Ref::Flow(i) => model.flows[i].bounds,
+    };
+    b.is_valid().then(|| Pos2::new(b.x + b.w / 2.0, b.y + b.h / 2.0))
+}
+
+/// The colour a find hit is drawn in, consistent with the rings, legend and tooltips.
+fn match_marker_color(style: &DiagramStyle, current: bool, element: bool, instance: bool) -> Color32 {
+    if current {
+        style.current_match
+    } else if instance && !element {
+        style.external
+    } else {
+        style.matched
+    }
+}
+
+/// Above this many off-screen hits the edge arrows would be clutter; the minimap dots remain.
+pub const MAX_EDGE_ARROWS: usize = 8;
+
+/// Where a ray from the centre of `inset` towards `toward` leaves `inset`, and its unit direction.
+pub fn edge_point(inset: Rect, toward: Pos2) -> (Pos2, Vec2) {
+    let c = inset.center();
+    let d = toward - c;
+    if d.length_sq() < 1e-6 {
+        return (Pos2::new(c.x, inset.min.y), Vec2::new(0.0, -1.0));
+    }
+    let half = inset.size() / 2.0;
+    let tx = if d.x.abs() > 1e-6 { half.x / d.x.abs() } else { f32::INFINITY };
+    let ty = if d.y.abs() > 1e-6 { half.y / d.y.abs() } else { f32::INFINITY };
+    let t = tx.min(ty);
+    (c + d * t, d.normalized())
+}
+
+/// Move `p` out of any `reserved` rectangle it falls in (find bar, legend, minimap …) to the
+/// nearest free spot on the same edge, staying inside `within`.
+pub fn nudge_out_of(mut p: Pos2, reserved: &[Rect], within: Rect) -> Pos2 {
+    for _ in 0..3 {
+        let Some(r) = reserved.iter().find(|r| r.contains(p)) else { break };
+        let gap = 14.0;
+        let candidates = [Pos2::new(r.max.x + gap, p.y), Pos2::new(r.min.x - gap, p.y), Pos2::new(p.x, r.max.y + gap), Pos2::new(p.x, r.min.y - gap)];
+        p = candidates.iter().copied().filter(|q| within.contains(*q)).min_by(|a, b| a.distance_sq(p).total_cmp(&b.distance_sq(p))).unwrap_or(within.clamp(p));
+    }
+    p
+}
+
+/// Small arrows at the view edge pointing at find hits that are currently off screen.
+/// Clicking one glides the camera there and makes it the current match.
+fn find_edge_arrows(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &DiagramStyle, rect: Rect) {
+    if !view.find.active() {
+        return;
+    }
+    let targets = view.find.targets(model);
+    let offscreen: Vec<(usize, Ref, Pos2)> = view.offscreen_matches(model, false).into_iter().filter_map(|i| Some((i, targets[i], ref_center(model, targets[i])?))).collect();
+    if offscreen.is_empty() || offscreen.len() > MAX_EDGE_ARROWS {
+        return;
+    }
+    let inset = rect.shrink(26.0);
+    // Chrome the arrows must not sit on: find bar (top-left), legend (top-right), minimap
+    // (bottom-right), zoom indicator (bottom-left). Generous approximations.
+    let mut reserved = vec![Rect::from_min_size(rect.min, Vec2::new(660.0, 90.0)), Rect::from_min_size(Pos2::new(rect.min.x, rect.max.y - 48.0), Vec2::new(250.0, 48.0))];
+    if !view.find.matches.is_empty() || !view.find.instance_hits.is_empty() {
+        reserved.push(Rect::from_min_size(Pos2::new(rect.max.x - 280.0, rect.min.y), Vec2::new(280.0, 80.0)));
+    }
+    if view.show_minimap {
+        reserved.push(Rect::from_min_size(rect.max - Vec2::new(224.0, 184.0), Vec2::new(224.0, 184.0)));
+    }
+    let current = view.find.current_in(model);
+    let inst = view.find.instance_match_refs(model);
+    let el: HashSet<Ref> = view.find.matches.iter().map(|m| m.target).collect();
+    let painter = ui.painter().with_clip_rect(rect);
+    let outline = ui.visuals().window_fill;
+    let mut go: Option<usize> = None;
+    for (i, r, c) in offscreen {
+        let sp = view.camera.world_to_screen(rect, c);
+        let (p0, dir) = edge_point(inset, sp);
+        let p = nudge_out_of(p0, &reserved, inset);
+        let color = match_marker_color(style, Some(r) == current, el.contains(&r), inst.contains(&r));
+        let hit = Rect::from_center_size(p, Vec2::splat(26.0));
+        let resp = ui.interact(hit, view.id.with(("find-arrow", r)), Sense::click());
+        let hovered = resp.hovered();
+        // disc + arrow head
+        let rad = if hovered { 12.0 } else { 10.0 };
+        painter.circle(p, rad + 1.5, outline.gamma_multiply(0.9), Stroke::NONE);
+        painter.circle_filled(p, rad, color.gamma_multiply(if hovered { 1.0 } else { 0.92 }));
+        let n = Vec2::new(-dir.y, dir.x);
+        let tip = p + dir * 6.0;
+        let base = p - dir * 4.0;
+        painter.add(egui::Shape::convex_polygon(vec![tip, base + n * 5.0, base - n * 5.0], outline, Stroke::NONE));
+        if hovered {
+            ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+            let name = match r {
+                Ref::Element(j) => model.elements[j].name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| model.elements[j].id.clone()),
+                Ref::Flow(j) => model.flows[j].name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| model.flows[j].id.clone()),
+            };
+            resp.clone().on_hover_text(format!("Go to {name}"));
+        }
+        if resp.clicked() {
+            go = Some(i);
+        }
+    }
+    if let Some(i) = go {
+        view.go_to_match(model, i);
+        ui.ctx().request_repaint();
+    }
+}
+
 fn minimap(ui: &mut Ui, view: &mut DiagramView, model: &Model, overlays: &Overlays, style: &DiagramStyle, rect: Rect) {
     let b = model.bounds;
     if !b.is_valid() || b.w <= 0.0 || b.h <= 0.0 {
@@ -942,6 +1088,21 @@ fn minimap(ui: &mut Ui, view: &mut DiagramView, model: &Model, overlays: &Overla
     let vis = view.camera.visible_world_rect(rect);
     let vr = Rect::from_min_max(to_mm(vis.min), to_mm(vis.max)).intersect(mm.expand(1.0));
     painter.rect(vr, 1.0, style.selection.gamma_multiply(0.12), Stroke::new(1.5, style.selection), StrokeKind::Inside);
+    // Find matches: bright dots so an off-screen hit is visible at a glance.
+    if view.find.active() {
+        let current = view.find.current_in(model);
+        let inst = view.find.instance_match_refs(model);
+        let el: HashSet<Ref> = view.find.matches.iter().map(|m| m.target).collect();
+        let outline = ui.visuals().window_fill;
+        for r in view.find.targets(model) {
+            let Some(c) = ref_center(model, r) else { continue };
+            let color = match_marker_color(style, Some(r) == current, el.contains(&r), inst.contains(&r));
+            let p = to_mm(c);
+            let rad = if Some(r) == current { 4.0 } else { 3.0 };
+            painter.circle(p, rad + 1.2, outline, Stroke::NONE);
+            painter.circle_filled(p, rad, color);
+        }
+    }
     let resp = ui.interact(mm, view.id.with("minimap"), Sense::click_and_drag());
     if resp.dragged() || resp.clicked() {
         if let Some(p) = resp.interact_pointer_pos() {
@@ -1390,5 +1551,40 @@ mod find_fade_tests {
         assert_eq!(o3.matches.get(&approve).copied(), Some(1.0));
         let b = o3.instance_matches.get(&approve).copied().unwrap_or(0.0);
         assert!(b > 0.0 && b < 1.0, "instance channel mid fade-out, got {b}");
+    }
+}
+
+#[cfg(test)]
+mod edge_arrow_tests {
+    use super::*;
+
+    #[test]
+    fn edge_point_exits_through_the_facing_side() {
+        let inset = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(200.0, 100.0));
+        let (p, d) = edge_point(inset, Pos2::new(1000.0, 50.0));
+        assert!((p.x - 200.0).abs() < 1e-3 && (p.y - 50.0).abs() < 1e-3, "right edge, got {p:?}");
+        assert!(d.x > 0.99);
+        let (p, _) = edge_point(inset, Pos2::new(100.0, -500.0));
+        assert!((p.y - 0.0).abs() < 1e-3 && (p.x - 100.0).abs() < 1e-3, "top edge, got {p:?}");
+        // diagonal targets hit the corner region of the nearer side, never outside the rect
+        let (p, _) = edge_point(inset, Pos2::new(900.0, 900.0));
+        assert!(inset.expand(1e-3).contains(p), "{p:?} must be on the boundary");
+        assert!((p.y - 100.0).abs() < 1e-3, "steep diagonal exits via the bottom edge");
+        // degenerate: target at the centre still yields a finite point
+        let (p, _) = edge_point(inset, inset.center());
+        assert!(inset.expand(1e-3).contains(p));
+    }
+
+    #[test]
+    fn nudge_moves_out_of_reserved_chrome_but_stays_inside_view() {
+        let within = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1000.0, 600.0));
+        let find_bar = Rect::from_min_size(Pos2::ZERO, Vec2::new(660.0, 90.0));
+        let p = nudge_out_of(Pos2::new(300.0, 20.0), &[find_bar], within);
+        assert!(!find_bar.contains(p), "moved out: {p:?}");
+        assert!(within.contains(p));
+        assert!((p.y - 104.0).abs() < 1e-3, "nearest free spot is just below the bar, got {p:?}");
+        // a point in free space is untouched
+        let q = Pos2::new(800.0, 300.0);
+        assert_eq!(nudge_out_of(q, &[find_bar], within), q);
     }
 }

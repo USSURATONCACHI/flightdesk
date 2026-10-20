@@ -2,9 +2,10 @@
 #
 # Builds the package from this working copy (no download): run `makepkg -si` inside
 # packaging/arch. Build artefacts (src/, pkg/, *.pkg.tar.*) are git-ignored.
+# The version comes from the workspace Cargo.toml: bump it there (semver) for each release.
 
 pkgname=flightdeck
-pkgver=0.1.0.r20.gb8ae092
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Fast, keyboard-first cockpit for Camunda 7 process engines, with a built-in MCP server"
 arch=('x86_64' 'aarch64')
@@ -35,14 +36,8 @@ sha256sums=()
 _repo="$startdir/../.."
 
 pkgver() {
-  cd "$_repo"
-  local base
-  base=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
-  if git rev-parse --git-dir >/dev/null 2>&1; then
-    printf '%s.r%s.g%s' "$base" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
-  else
-    printf '%s' "$base"
-  fi
+  # The version is owned by Cargo.toml (semantic versioning, bumped per release); no git suffix.
+  sed -n 's/^version = "\(.*\)"/\1/p' "$_repo/Cargo.toml" | head -n1
 }
 
 prepare() {

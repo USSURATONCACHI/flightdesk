@@ -7,5 +7,5 @@ pub mod widget;
 pub mod wrap;
 
 pub use render::{BadgeKind, DiagramStyle, Overlays};
-pub use widget::{Diagram, DiagramSettings, DiagramView, PickMode};
+pub use widget::{Diagram, DiagramSettings, DiagramView, PickMode, MAX_EDGE_ARROWS};
 pub use wrap::{PointerWrap, WrapMode};

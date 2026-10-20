@@ -40,4 +40,12 @@ project `.mcp.json` registers it; approve it or run
   `ui_select` + `ui_fit`, `ui_find`, `ui_dock` (Variables, Incidents, Timeline, Modify…),
   `ui_filter`, `ui_zoom`, `ui_pan`, `ui_tabs`, `ui_command` / `ui_commands`, `ui_key`, `ui_type`,
   `ui_confirm` (answer the app's own confirmation dialog), `ui_screenshot` (see the screen).
+- `ui_find`: `query` searches element text and, when enabled in Settings, running instances by
+  business key / id (those arrive asynchronously: re-read `ui_state` until
+  `find.instance_hits_loading` is false). `ui_state.place.diagram.find.targets` lists every hit
+  with `kind` (element | instance | both), `visible` (on screen once the camera settles) and
+  `current`; `offscreen` and `edge_arrows` say whether the UI is showing edge arrows for
+  off-screen hits (it hides them above 8 to avoid clutter; the minimap dots always show).
+  `ui_find` with `goto: <index>` or `cycle: next|prev` makes a hit current and glides the camera
+  to it, exactly like clicking an edge arrow or pressing Enter.
 - After navigation give the UI a moment, then `ui_state` or `ui_screenshot` to verify.

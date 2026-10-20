@@ -67,7 +67,7 @@ fn specs_vec() -> Vec<Spec> {
         s("ui_fit", "Fit the camera: all | selection | tokens | element (with element_id).", obj(json!({"what": {"type": "string", "enum": ["all", "selection", "tokens", "element"]}, "element_id": {"type": "string"}}), &["what"])),
         s("ui_zoom", "Set the zoom level (1 = 100%) or multiply by factor, around the viewport centre.", obj(json!({"level": {"type": "number"}, "factor": {"type": "number"}}), &[])),
         s("ui_pan", "Pan the diagram by screen pixels.", obj(json!({"dx": {"type": "number"}, "dy": {"type": "number"}}), &["dx", "dy"])),
-        s("ui_find", "Open the in-diagram find bar with a query (returns matches), or close it with an empty query.", obj(json!({"query": {"type": "string"}, "include_flows": {"type": "boolean"}}), &[])),
+        s("ui_find", "In-diagram find (Ctrl+F). `query` opens the bar and searches elements and, when enabled in settings, running instances by business key / id; empty query closes it. `goto` (target index from ui_state.find.targets) or `cycle` next|prev makes that hit current and glides the camera to it, like clicking an edge arrow. Returns element matches and the current targets with on-screen visibility.", obj(json!({"query": {"type": "string"}, "include_flows": {"type": "boolean"}, "goto": {"type": "integer"}, "cycle": {"type": "string", "enum": ["next", "prev"]}}), &[])),
         s("ui_dock", "Show a dock tab by name or index (e.g. Variables, Incidents, Timeline, Modify) or toggle the dock.", obj(json!({"tab": {"type": "string"}, "visible": {"type": "boolean"}}), &[])),
         s("ui_filter", "Set the current place's filter / query text (definitions filter, instance list filter, variables filter, or the search query which is executed).", obj(json!({"text": {"type": "string"}}), &["text"])),
         s("ui_command", "Run a named command (see ui_commands): e.g. refresh, toggle_theme, toggle_dock, back, forward, palette, help.", obj(json!({"name": {"type": "string"}}), &["name"])),
@@ -284,8 +284,48 @@ fn diagram_json_model(view: &crate::viewport::DiagramView, m: &bpmn::Model) -> V
         "loaded": true, "elements": m.flow_nodes().count(), "flows": m.flows.len(),
         "selection": sel, "zoom": view.camera.target.zoom, "center": [view.camera.target.center.x, view.camera.target.center.y],
         "camera_animating": view.camera.is_animating(),
-        "find": if view.find.open { json!({"query": view.find.query, "matches": view.find.matches.len(), "instance_hits": view.find.instance_hits.iter().map(|h| json!({"activity_id": h.activity_id, "process_instance_id": h.process_instance_id, "business_key": h.business_key})).collect::<Vec<_>>(), "current": view.find.cursor}) } else { Value::Null },
+        "find": find_json(view, m),
         "minimap": view.show_minimap, "show_ids": view.show_ids, "focused": view.focused,
+    })
+}
+
+/// Find bar state as agents see it: the query, every target Enter cycles through (element
+/// matches first, then activities with matching instances) with its kind and whether it is on
+/// screen, and whether edge arrows are currently shown for the off-screen ones.
+fn find_json(view: &crate::viewport::DiagramView, m: &bpmn::Model) -> Value {
+    if !view.find.open {
+        return Value::Null;
+    }
+    let el: std::collections::HashSet<bpmn::Ref> = view.find.matches.iter().map(|x| x.target).collect();
+    let inst = view.find.instance_match_refs(m);
+    let offscreen = view.offscreen_matches(m, true);
+    let targets: Vec<Value> = view
+        .find
+        .targets(m)
+        .iter()
+        .enumerate()
+        .map(|(i, &r)| {
+            let (id, name) = match r {
+                bpmn::Ref::Element(j) => (m.elements[j].id.clone(), m.elements[j].display_name().to_string()),
+                bpmn::Ref::Flow(j) => (m.flows[j].id.clone(), m.flows[j].name.clone().unwrap_or_default()),
+            };
+            let kind = match (el.contains(&r), inst.contains(&r)) {
+                (true, true) => "both",
+                (false, true) => "instance",
+                _ => "element",
+            };
+            json!({"index": i, "id": id, "name": name, "kind": kind, "visible": !offscreen.contains(&i), "current": i == view.find.cursor})
+        })
+        .collect();
+    json!({
+        "query": view.find.query,
+        "matches": view.find.matches.len(),
+        "instance_hits": view.find.instance_hits.iter().map(|h| json!({"activity_id": h.activity_id, "process_instance_id": h.process_instance_id, "business_key": h.business_key})).collect::<Vec<_>>(),
+        "instance_hits_loading": view.find.instance_hits_loading,
+        "current": view.find.cursor,
+        "targets": targets,
+        "offscreen": offscreen.len(),
+        "edge_arrows": !offscreen.is_empty() && offscreen.len() <= crate::viewport::MAX_EDGE_ARROWS,
     })
 }
 
@@ -977,21 +1017,51 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 Ok(Some(json!({"center": [c.x, c.y]})))
             }
             "ui_find" => {
-                let q = arg_str(&a, "query").unwrap_or("").to_string();
+                // An explicitly empty query closes the bar; an absent one leaves it as is.
+                let q = a.get("query").map(|v| v.as_str().unwrap_or("").to_string());
                 let flows = arg_bool(&a, "include_flows");
+                let goto = a.get("goto").and_then(Value::as_u64).map(|v| v as usize);
+                let cycle = arg_str(&a, "cycle").map(str::to_string);
                 let r = with_diagram(app, |view, m| {
-                    if q.is_empty() {
-                        view.close_find();
-                        return json!({"ok": true, "closed": true});
-                    }
-                    view.open_find_with(&q);
-                    if let Some(f) = flows {
-                        view.find.include_flows = f;
+                    if let Some(q) = &q {
+                        if q.is_empty() {
+                            view.close_find();
+                            return Ok(json!({"ok": true, "closed": true}));
+                        }
+                        view.open_find_with(q);
+                        if let Some(f) = flows {
+                            view.find.include_flows = f;
+                        }
+                    } else if !view.find.open {
+                        return Err("find is not open; pass a query first".to_string());
                     }
                     let opts = bpmn::search::SearchOptions { case_sensitive: view.find.case_sensitive, categories: view.find.categories.clone(), include_flows: view.find.include_flows };
-                    let res = bpmn::search::search(m, &q, &opts);
-                    json!({"ok": true, "matches": res.iter().take(100).map(|r| match r.target { bpmn::Ref::Element(i) => json!({"element_id": m.elements[i].id, "name": m.elements[i].display_name(), "field": r.field}), bpmn::Ref::Flow(i) => json!({"flow_id": m.flows[i].id, "field": r.field}) }).collect::<Vec<_>>(), "count": res.len()})
-                })?;
+                    let res = bpmn::search::search(m, &view.find.query, &opts);
+                    if q.is_some() {
+                        // Make the state the frame would compute, so goto/targets are valid right away.
+                        view.find.matches = res.clone();
+                        view.find.cursor = 0;
+                    }
+                    let n = view.find.targets(m).len();
+                    let dest = match (goto, cycle.as_deref()) {
+                        (Some(i), _) => Some(i),
+                        (None, Some("next")) if n > 0 => Some((view.find.cursor + 1) % n),
+                        (None, Some("prev")) if n > 0 => Some((view.find.cursor + n - 1) % n),
+                        (None, Some(other)) if other != "next" && other != "prev" => return Err(format!("cycle must be next or prev, got {other}")),
+                        _ => None,
+                    };
+                    let went = match dest {
+                        Some(i) => Some(view.go_to_match(m, i).ok_or(format!("no find target {i} (there are {n})"))?),
+                        None => None,
+                    };
+                    Ok(json!({
+                        "ok": true,
+                        "matches": res.iter().take(100).map(|r| match r.target { bpmn::Ref::Element(i) => json!({"element_id": m.elements[i].id, "name": m.elements[i].display_name(), "field": r.field}), bpmn::Ref::Flow(i) => json!({"flow_id": m.flows[i].id, "field": r.field}) }).collect::<Vec<_>>(),
+                        "count": res.len(),
+                        "went_to": went.map(|r| match r { bpmn::Ref::Element(i) => m.elements[i].id.clone(), bpmn::Ref::Flow(i) => m.flows[i].id.clone() }),
+                        "find": find_json(view, m),
+                    }))
+                })??;
                 Ok(Some(r))
             }
             "ui_dock" => {
