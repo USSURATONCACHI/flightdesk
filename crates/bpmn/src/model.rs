@@ -3,14 +3,15 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
+use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct Pos {
     pub x: f32,
     pub y: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
@@ -67,7 +68,7 @@ pub type ElementIdx = usize;
 /// Index of a flow in `Model::flows`.
 pub type FlowIdx = usize;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize)]
 pub enum ElementKind {
     StartEvent,
     EndEvent,
@@ -225,13 +226,13 @@ impl ElementKind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Expression {
     pub text: String,
     pub language: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum EventDef {
     Timer { time_date: Option<String>, time_duration: Option<String>, time_cycle: Option<String> },
     Message { message_ref: Option<String>, name: Option<String> },
@@ -263,7 +264,7 @@ impl EventDef {
 }
 
 /// A value of a camunda input/output parameter, which can be nested.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum ParamValue {
     Text(String),
     Script { format: Option<String>, resource: Option<String>, source: String },
@@ -271,13 +272,13 @@ pub enum ParamValue {
     Map(Vec<(String, ParamValue)>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct IoParam {
     pub name: String,
     pub value: ParamValue,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Listener {
     /// "execution" or "task"
     pub kind: String,
@@ -289,14 +290,14 @@ pub struct Listener {
     pub fields: Vec<FieldInjection>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct FieldInjection {
     pub name: String,
     pub string_value: Option<String>,
     pub expression: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct FormField {
     pub id: String,
     pub label: Option<String>,
@@ -308,7 +309,7 @@ pub struct FormField {
 }
 
 /// camunda:in / camunda:out mapping of a call activity.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct VariableMapping {
     pub direction: String, // "in" | "out"
     pub source: Option<String>,
@@ -319,7 +320,7 @@ pub struct VariableMapping {
     pub local: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Extensions {
     pub inputs: Vec<IoParam>,
     pub outputs: Vec<IoParam>,
@@ -347,7 +348,7 @@ impl Extensions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct MultiInstance {
     pub sequential: bool,
     pub collection: Option<String>,
@@ -357,7 +358,7 @@ pub struct MultiInstance {
     pub attrs: Vec<(String, String)>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Element {
     pub id: String,
     pub name: Option<String>,
@@ -420,7 +421,7 @@ impl Element {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 pub enum FlowKind {
     SequenceFlow,
     MessageFlow,
@@ -441,7 +442,7 @@ impl FlowKind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Flow {
     pub id: String,
     pub name: Option<String>,
@@ -467,7 +468,7 @@ impl Flow {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Process {
     pub id: String,
     pub name: Option<String>,
@@ -478,14 +479,14 @@ pub struct Process {
 }
 
 /// Root-level named definitions (messages, errors, signals, escalations).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct NamedDef {
     pub id: String,
     pub name: Option<String>,
     pub code: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 pub enum Ref {
     Element(ElementIdx),
     Flow(FlowIdx),

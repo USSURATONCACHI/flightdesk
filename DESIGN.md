@@ -557,7 +557,39 @@ settings, saved searches, dock widths, collapsed sections, column layouts.
 
 ---
 
-## 15. Decisions log
+## 15. AI agents: the built-in MCP server
+
+Flightdeck embeds a Model Context Protocol server (Streamable HTTP, JSON-RPC 2.0, localhost
+only, optional bearer token) so an agent can do everything a human operator can, through the
+same code paths. It is off by default and toggled from the top-bar pill ("MCP :7788"), from
+Settings → MCP server, or with `cockpit --mcp`.
+
+Design rules:
+
+- **Tools run on the UI thread.** The HTTP thread queues a call and blocks; the frame loop
+  drains the queue, executes the tool against `&mut App` and answers (engine calls are spawned
+  on the I/O runtime and answer when done). There is no second code path: `ui_select` is the
+  same `DiagramView::select` a click uses, `ui_filter` writes the same filter string the user
+  types into.
+- **Not-ready is not an error.** A tool that needs a diagram or the definition list that is
+  still downloading is re-queued for a later frame (up to ~15 s) instead of failing.
+- **Two families.** Engine tools (`list_definitions`, `get_element`, `search_instances`,
+  `get_instance`, `set_variable`, `modify_instance`, `batch`, …) answer structured JSON;
+  UI tools (`ui_state`, `ui_navigate`, `ui_select`, `ui_fit`, `ui_find`, `ui_dock`,
+  `ui_filter`, `ui_key`, `ui_type`, `ui_command`, `ui_screenshot`, `ui_confirm`, …) read and
+  drive the interface. `ui_screenshot` returns a PNG as MCP image content so the agent can see
+  what the user sees.
+- **Destructive tools require `confirm: true`** (delete, modification, restart, batch,
+  complete task, resolve incident, suspend definition), mirroring the human confirmation
+  dialog; `ui_confirm` answers the human dialog when the agent triggered it through the UI.
+- **Synthetic input** is limited to what egui can accept mid-frame: key presses and typed text
+  (`ui_key`, `ui_type`). Pointer clicks are not synthesised; every clickable thing has a
+  semantic tool instead (`ui_select`, `ui_dock`, `ui_tabs`, `ui_command`, `ui_hit_test`).
+- **Clients:** Claude Code reads the project `.mcp.json` (`type: http`); any stdio-only client
+  can use `cockpit --mcp-stdio http://127.0.0.1:7788/mcp` as a bridge. A `flightdeck` skill in
+  `.claude/skills` teaches the workflow (orient → read → act → show).
+
+## 16. Decisions log
 
 - *Wheel zooms by default.* Cockpit's "wheel scrolls" is the single most complained-about
   behaviour; people navigating a diagram want to zoom. Panning has drag, keys and Shift+wheel.
@@ -569,5 +601,9 @@ settings, saved searches, dock widths, collapsed sections, column layouts.
 - *Element inspector shows raw attributes, not a curated subset.* The whole point of the
   pain is "I can't see what this does"; curation is done by ordering and collapsing, not by
   omission.
+- *Window placement for development.* `FLIGHTDECK_NO_FOCUS=1` creates the window without
+  activating it and `FLIGHTDECK_WINDOW_POS=x,y` positions it (X11/Windows/macOS; Wayland
+  compositors ignore client positioning, so `scripts/shot.sh` runs through Xwayland). Test runs
+  never steal the user's focus.
 - *Native first, wasm later.* Native gets the smoothest input and no CORS games; the code
   stays wasm-compatible (no blocking I/O on the UI thread, `reqwest` with the wasm feature).

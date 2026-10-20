@@ -8,14 +8,14 @@ edition = "2021"
 license = "MIT"
 
 [workspace.dependencies]
-egui = "0.37"
+egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
 eframe = { version = "0.37", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11", "persistence"] }
 egui_extras = { version = "0.37", features = ["svg"] }
 egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
 roxmltree = "0.20"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "blocking"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 thiserror = "2"
 anyhow = "1"
@@ -25,3 +25,5 @@ chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 directories = "6"
 toml = "0.8"
+tiny_http = "0.12"
+base64 = "0.22"
