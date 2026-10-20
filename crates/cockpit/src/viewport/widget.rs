@@ -1325,7 +1325,7 @@ mod find_fade_tests {
         let approve = Ref::Element(model.element_idx("Task_Approve").unwrap());
         let ship = Ref::Element(model.element_idx("Task_Ship").unwrap());
         let ctx = egui::Context::default();
-        let mut view = DiagramView::new(Id::new("fade-test"));
+        let mut view = DiagramView::new(Id::unique("fade-test"));
         view.find.open = true;
         view.find.query = "ORD".into();
         view.find.instance_hits = vec![hit("Task_Approve")];
@@ -1372,7 +1372,7 @@ mod find_fade_tests {
         let model = model();
         let approve = Ref::Element(model.element_idx("Task_Approve").unwrap());
         let ctx = egui::Context::default();
-        let mut view = DiagramView::new(Id::new("fade-test-2"));
+        let mut view = DiagramView::new(Id::unique("fade-test-2"));
         view.find.open = true;
         view.find.query = "Approve".into();
         view.find.matches = bpmn::search::search(&model, "Approve", &bpmn::search::SearchOptions::default());
