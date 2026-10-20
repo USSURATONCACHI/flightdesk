@@ -84,21 +84,21 @@ fn form(ui: &mut Ui, app: &mut App) {
     }
     let p = &mut app.connect.profile;
     egui::Grid::new("connect-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-        ui.label("Name");
-        ui.add(egui::TextEdit::singleline(&mut p.name).desired_width(f32::INFINITY));
+        let l = ui.label("Name");
+        ui.add(egui::TextEdit::singleline(&mut p.name).desired_width(f32::INFINITY)).labelled_by(l.id);
         ui.end_row();
-        ui.label("REST URL");
-        let r = ui.add(egui::TextEdit::singleline(&mut p.url).hint_text("http://host:8080/engine-rest  (a Cockpit URL works too)").desired_width(f32::INFINITY));
+        let l = ui.label("REST URL");
+        let r = ui.add(egui::TextEdit::singleline(&mut p.url).hint_text("http://host:8080/engine-rest  (a Cockpit URL works too)").desired_width(f32::INFINITY)).labelled_by(l.id);
         if !app.connect.initialised || p.url.is_empty() {
             r.request_focus();
         }
         ui.end_row();
-        ui.label("User");
-        ui.add(egui::TextEdit::singleline(&mut p.user).hint_text("optional (basic auth)").desired_width(f32::INFINITY));
+        let l = ui.label("User");
+        ui.add(egui::TextEdit::singleline(&mut p.user).hint_text("optional (basic auth)").desired_width(f32::INFINITY)).labelled_by(l.id);
         ui.end_row();
-        ui.label("Password");
+        let l = ui.label("Password");
         ui.horizontal(|ui| {
-            ui.add(egui::TextEdit::singleline(&mut p.password).password(!app.connect.show_password).desired_width(ui.available_width() - 40.0));
+            ui.add(egui::TextEdit::singleline(&mut p.password).password(!app.connect.show_password).desired_width(ui.available_width() - 40.0)).labelled_by(l.id);
             ui.toggle_value(&mut app.connect.show_password, "👁").on_hover_text("Show password");
         });
         ui.end_row();

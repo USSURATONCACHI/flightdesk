@@ -261,3 +261,32 @@ query = "state:finished finished<-1d"
     assert_eq!(backups.len(), 1, "the unreadable file was preserved");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn an_app_without_a_settings_path_never_writes_a_settings_file() {
+    use cockpit::app::App;
+    use egui_kittest::Harness;
+    let dir = std::env::temp_dir().join(format!("flightdeck-persist-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let target = dir.join("settings.toml");
+    // 1. default app (as every headless test builds it): dirty settings are dropped, not written
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, Settings::default(), 1.0);
+    app.offline = true;
+    assert!(app.settings_path.is_none(), "tests must not point at the real configuration");
+    app.set_theme_mode(ThemeMode::Dark);
+    let mut h = Harness::builder().allow_missing_glyphs().build_ui_state(|ui, app: &mut App| app.frame(ui), app);
+    h.run_steps(3);
+    assert!(!target.exists());
+    assert!(!h.state().settings_dirty, "the dirty flag was consumed without a file");
+    // 2. with an explicit path, the same change is persisted there and only there
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, Settings::default(), 1.0);
+    app.offline = true;
+    app.settings_path = Some(target.clone());
+    app.set_theme_mode(ThemeMode::Light);
+    let mut h = Harness::builder().allow_missing_glyphs().build_ui_state(|ui, app: &mut App| app.frame(ui), app);
+    h.run_steps(3);
+    assert_eq!(Settings::load_from(&target).theme, ThemeMode::Light);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -128,6 +128,7 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| {
             cockpit::platform::init(cc, cc);
             let mut app = app::App::new(&cc.egui_ctx, settings, args.scale);
+            app.settings_path = settings::Settings::path();
             if theme_override.is_some() {
                 app.theme_override = theme_override;
                 app.frame_theme_dirty = true;

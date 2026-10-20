@@ -94,7 +94,8 @@ impl Default for Settings {
 }
 
 impl Settings {
-    fn path() -> Option<std::path::PathBuf> {
+    /// The per-user settings file (`<config dir>/flightdeck/settings.toml`).
+    pub fn path() -> Option<std::path::PathBuf> {
         let d = directories::ProjectDirs::from("", "", "flightdeck")?;
         Some(d.config_dir().join("settings.toml"))
     }

@@ -49,6 +49,8 @@ impl Cache {
 pub struct App {
     pub settings: Settings,
     pub settings_dirty: bool,
+    /// Where settings are persisted. `None` (the default, used by tests) never writes anything.
+    pub settings_path: Option<std::path::PathBuf>,
     pub tokens: Tokens,
     pub net: Option<Net<App>>,
     pub conn: ConnStatus,
@@ -109,6 +111,7 @@ impl App {
         Self {
             settings,
             settings_dirty: false,
+            settings_path: None,
             tokens,
             net: None,
             conn: ConnStatus::Disconnected,
@@ -743,7 +746,7 @@ impl eframe::App for App {
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
-        self.settings.save();
+        self.persist_settings();
     }
 
     fn on_exit(&mut self) {
@@ -752,6 +755,14 @@ impl eframe::App for App {
 }
 
 impl App {
+    /// Write settings to the configured file, if any. Headless tests have no path and so can
+    /// never touch a developer's real configuration.
+    pub fn persist_settings(&self) {
+        if let Some(p) = &self.settings_path {
+            self.settings.save_to(p);
+        }
+    }
+
     fn report_stats(&self) {
         if self.stats && !self.frame_times.is_empty() {
             let mut t = self.frame_times.clone();
@@ -910,7 +921,7 @@ impl App {
         }
         if self.settings_dirty {
             self.settings_dirty = false;
-            self.settings.save();
+            self.persist_settings();
         }
         self.request_screenshot(ctx);
         if self.stats {
