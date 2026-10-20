@@ -163,9 +163,8 @@ fn alt_doubles_wheel_zoom_and_renders_badge() {
 fn modified_shortcuts_are_not_shadowed_by_plain_ones() {
     let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn");
     let ctx = egui::Context::default();
-    let mut settings = Settings::default();
-    settings.zoom_speed = 1.0; // keyboard step = 1.25 exactly
-    settings.alt_speed = 0.5;
+    // zoom_speed 1 makes the keyboard step exactly 1.25; alt 0.5 is a precision-mode factor
+    let settings = Settings { zoom_speed: 1.0, alt_speed: 0.5, ..Default::default() };
     let mut app = App::new(&ctx, settings, 1.0);
     app.offline = true;
     app.navigate(cockpit::state::Nav::File { path: fixture.into() }, cockpit::state::NavMode::NewTab);
