@@ -552,7 +552,7 @@ fn show_impl(
 
     // pick-mode banner
     if let Some(PickMode::Target { label }) = &view.pick {
-        let txt = format!("{label} — click a target element, Esc to cancel");
+        let txt = crate::t!("pick-banner", label = label.clone());
         let galley = painter.layout_no_wrap(txt, FontId::proportional(13.0), style.badge_text);
         let r = Rect::from_center_size(Pos2::new(rect.center().x, rect.min.y + 26.0), galley.size() + Vec2::new(24.0, 12.0));
         painter.rect_filled(r, 6.0, style.selection);
@@ -861,7 +861,7 @@ fn find_bar(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &DiagramS
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("🔍").strong());
                 let edit_w = (ui.available_width() - 190.0).max(80.0);
-                let edit = egui::TextEdit::singleline(&mut view.find.query).id(id).hint_text("Find element, business key or instance id…").desired_width(edit_w).frame(egui::Frame::NONE);
+                let edit = egui::TextEdit::singleline(&mut view.find.query).id(id).hint_text(crate::t!("find-hint")).desired_width(edit_w).frame(egui::Frame::NONE);
                 let resp = ui.add(edit);
                 if view.find.want_focus {
                     resp.request_focus();
@@ -888,31 +888,31 @@ fn find_bar(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &DiagramS
                 let count = if view.find.query.trim().is_empty() {
                     String::new()
                 } else if n_total == 0 && !view.find.instance_hits_loading {
-                    "no matches".to_string()
+                    crate::t!("find-no-matches")
                 } else {
                     format!("{} / {}", (view.find.cursor + 1).min(n_total.max(1)), n_total)
                 };
                 let count_color = if n_total == 0 && !view.find.query.trim().is_empty() && !view.find.instance_hits_loading { style.incident } else { ui.visuals().weak_text_color() };
                 ui.add_sized([70.0, 20.0], egui::Label::new(egui::RichText::new(count).color(count_color)));
-                if ui.small_button("▲").on_hover_text("Previous match (Shift+Enter)").clicked() {
+                if ui.small_button("▲").on_hover_text(crate::t!("find-prev-tip")).clicked() {
                     go = -1;
                 }
-                if ui.small_button("▼").on_hover_text("Next match (Enter)").clicked() {
+                if ui.small_button("▼").on_hover_text(crate::t!("find-next-tip")).clicked() {
                     go = 1;
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.small_button("✕").on_hover_text("Close (Esc)").clicked() {
+                    if ui.small_button("✕").on_hover_text(crate::t!("find-close-tip")).clicked() {
                         close = true;
                     }
                 });
             });
             // row 2: options and what matched
             ui.horizontal_wrapped(|ui| {
-                ui.toggle_value(&mut view.find.case_sensitive, "Aa").on_hover_text("Case sensitive");
-                ui.toggle_value(&mut view.find.include_flows, "⟶").on_hover_text("Include sequence flows");
-                for (cat, label) in [("task", "task"), ("gateway", "gw"), ("event", "ev"), ("call", "call"), ("subprocess", "sub")] {
+                ui.toggle_value(&mut view.find.case_sensitive, "Aa").on_hover_text(crate::t!("find-case-tip"));
+                ui.toggle_value(&mut view.find.include_flows, "⟶").on_hover_text(crate::t!("find-flows-tip"));
+                for cat in ["task", "gateway", "event", "call", "subprocess"] {
                     let mut on = view.find.categories.iter().any(|c| c == cat);
-                    if ui.toggle_value(&mut on, label).on_hover_text(format!("Only {label}s")).changed() {
+                    if ui.toggle_value(&mut on, crate::t!(&format!("find-cat-{cat}"))).on_hover_text(crate::t!(&format!("find-only-{cat}"))).changed() {
                         if on {
                             view.find.categories.push(cat.to_string());
                         } else {
@@ -925,17 +925,17 @@ fn find_bar(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &DiagramS
                     let n_el = view.find.matches.len();
                     let n_inst = view.find.instance_hits.len();
                     let n_act = n_total.saturating_sub(n_el);
-                    let mut txt = format!("{n_el} element{}", if n_el == 1 { "" } else { "s" });
+                    let mut txt = crate::t!("find-count-elements", n = n_el);
                     if view.find.instance_hits_loading {
-                        txt.push_str(" · searching instances…");
+                        txt.push_str(&format!(" · {}", crate::t!("find-searching-instances")));
                     } else if n_inst > 0 {
-                        txt.push_str(&format!(" · {n_inst} instance{} at {n_act} activit{}", if n_inst == 1 { "" } else { "s" }, if n_act == 1 { "y" } else { "ies" }));
+                        txt.push_str(&format!(" · {}", crate::t!("find-count-instances", n = n_inst, a = n_act)));
                     }
                     ui.label(egui::RichText::new(txt).weak().small());
                     if n_inst > 0 {
                         let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
                         ui.painter().circle_filled(r.center(), 4.0, style.external);
-                        ui.label(egui::RichText::new("instance match").weak().small());
+                        ui.label(egui::RichText::new(crate::t!("find-legend-instance-short")).weak().small());
                     }
                 }
             });
@@ -1053,7 +1053,7 @@ fn find_edge_arrows(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &
                 Ref::Element(j) => model.elements[j].name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| model.elements[j].id.clone()),
                 Ref::Flow(j) => model.flows[j].name.clone().filter(|n| !n.is_empty()).unwrap_or_else(|| model.flows[j].id.clone()),
             };
-            resp.clone().on_hover_text(format!("Go to {name}"));
+            resp.clone().on_hover_text(crate::t!("find-go-to", name = name));
         }
         if resp.clicked() {
             go = Some(i);
@@ -1144,17 +1144,17 @@ fn zoom_indicator(ui: &mut Ui, view: &mut DiagramView, model: &Model, rect: Rect
     let r = Rect::from_min_size(Pos2::new(rect.min.x + 12.0, rect.max.y - 34.0), Vec2::new(64.0, 22.0));
     ui.scope_builder(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
         let b = ui.add(egui::Button::new(egui::RichText::new(txt).monospace().size(11.0)).fill(ui.visuals().window_fill.gamma_multiply(0.9)).min_size(r.size()));
-        let b = b.on_hover_text("Zoom. Click for presets. Wheel zooms, Shift+wheel pans, 0 fits, 1 = 100%");
+        let b = b.on_hover_text(crate::t!("zoom-tip"));
         egui::Popup::menu(&b).show(|ui| {
-            if ui.button("Fit diagram      0").clicked() {
+            if ui.button(format!("{:<16} 0", crate::t!("zoom-fit-diagram"))).clicked() {
                 view.fit_all();
             }
-            if ui.button("Fit selection    F").clicked() {
+            if ui.button(format!("{:<16} F", crate::t!("zoom-fit-selection"))).clicked() {
                 if let Some(Ref::Element(i)) = view.selection {
                     view.fit_element(model, i);
                 }
             }
-            if ui.button("100%             1").clicked() {
+            if ui.button(format!("{:<16} 1", "100%")).clicked() {
                 view.camera.set_zoom(rect, 1.0, rect.center());
             }
             for z in [0.25, 0.5, 2.0, 4.0] {
@@ -1163,9 +1163,9 @@ fn zoom_indicator(ui: &mut Ui, view: &mut DiagramView, model: &Model, rect: Rect
                 }
             }
             ui.separator();
-            ui.checkbox(&mut view.show_minimap, "Minimap        M");
-            ui.checkbox(&mut view.show_grid, "Grid           G");
-            ui.checkbox(&mut view.show_ids, "Element ids    I");
+            ui.checkbox(&mut view.show_minimap, format!("{:<14} M", crate::t!("zoom-minimap")));
+            ui.checkbox(&mut view.show_grid, format!("{:<14} G", crate::t!("zoom-grid")));
+            ui.checkbox(&mut view.show_ids, format!("{:<14} I", crate::t!("zoom-ids")));
         });
     });
     zoom_dial(ui, view, Rect::from_min_size(Pos2::new(r.max.x + 6.0, r.min.y), Vec2::new(150.0, 22.0)), rect, style, settings);
@@ -1199,7 +1199,7 @@ fn zoom_dial(ui: &mut Ui, view: &mut DiagramView, dial: Rect, viewport: Rect, st
             view.camera.zoom_by(viewport, ((scroll.x + scroll.y) * settings.zoom_mouse / PX_PER_OCTAVE).exp2(), anchor);
         }
     }
-    resp.on_hover_text("Drag left or right to zoom, as far as you like");
+    resp.on_hover_text(crate::t!("zoom-dial-tip"));
     // paint: a ruler that scrolls with log2(zoom)
     let painter = ui.painter().with_clip_rect(dial);
     let fill = ui.visuals().window_fill.gamma_multiply(0.9);
@@ -1234,23 +1234,23 @@ fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, 
                     let e = &model.elements[i];
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(e.display_name()).strong());
-                        ui.label(egui::RichText::new(e.kind.label()).weak());
+                        ui.label(egui::RichText::new(crate::i18n::bpmn_kind(&e.kind)).weak());
                     });
                     if e.name.is_some() {
                         ui.label(egui::RichText::new(&e.id).monospace().weak());
                     }
                     let mut facts: Vec<String> = vec![];
                     if let Some(n) = overlays.running.get(&e.id) {
-                        facts.push(format!("{n} running"));
+                        facts.push(crate::t!("tip-running", n = *n));
                     }
                     if let Some(n) = overlays.incidents.get(&e.id) {
-                        facts.push(format!("{n} incident{}", if *n == 1 { "" } else { "s" }));
+                        facts.push(crate::t!("tip-incidents", n = *n));
                     }
                     if let Some(n) = overlays.completed.get(&e.id) {
-                        facts.push(format!("executed ×{n}"));
+                        facts.push(crate::t!("tip-executed", n = *n));
                     }
                     if let Some((t, _)) = overlays.timers.get(&e.id) {
-                        facts.push(format!("timer {t}"));
+                        facts.push(crate::t!("tip-timer", t = t.clone()));
                     }
                     if !facts.is_empty() {
                         ui.label(facts.join(" · "));
@@ -1264,12 +1264,12 @@ fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, 
                 Ref::Flow(i) => {
                     let f = &model.flows[i];
                     ui.label(egui::RichText::new(f.display_name()).strong());
-                    ui.label(egui::RichText::new(f.kind.label()).weak());
+                    ui.label(egui::RichText::new(crate::i18n::bpmn_flow(f.kind)).weak());
                     if let (Some(s), Some(t)) = (f.source, f.target) {
                         ui.label(format!("{} → {}", model.elements[s].display_name(), model.elements[t].display_name()));
                     }
                     if f.is_default {
-                        ui.label("default flow");
+                        ui.label(crate::t!("tip-default-flow"));
                     }
                     if let Some(c) = &f.condition {
                         ui.label(egui::RichText::new(&c.text).monospace().size(11.0));
@@ -1316,48 +1316,48 @@ fn find_explanation(ui: &mut Ui, view: &DiagramView, model: &Model, style: &Diag
     if let Some(m) = el {
         ui.horizontal(|ui| {
             dot(ui, style.matched);
-            ui.label(egui::RichText::new(format!("Element matches: {} “{}”", m.field, crate::util::ellipsize(&m.snippet, 60))).size(11.5));
+            ui.label(egui::RichText::new(crate::t!("find-explain-element", field = m.field.to_string(), snippet = crate::util::ellipsize(&m.snippet, 60))).size(11.5));
         });
     }
     if !hits.is_empty() {
         ui.horizontal(|ui| {
             dot(ui, style.external);
             let n = hits.len();
-            ui.label(egui::RichText::new(format!("{n} running instance{} here match{}:", if n == 1 { "" } else { "s" }, if n == 1 { "es" } else { "" })).size(11.5));
+            ui.label(egui::RichText::new(crate::t!("find-explain-instances", n = n)).size(11.5));
         });
         for x in hits.iter().take(4) {
             let what = match &x.business_key {
-                Some(bk) => format!("business key {bk}"),
-                None => format!("id {}", x.process_instance_id),
+                Some(bk) => crate::t!("find-explain-business-key", key = bk.clone()),
+                None => crate::t!("find-explain-id", id = x.process_instance_id.clone()),
             };
             ui.label(egui::RichText::new(format!("    {what}")).monospace().size(11.0));
         }
         if let Ref::Element(i) = h {
             match model.elements[i].kind {
                 bpmn::ElementKind::ParallelGateway | bpmn::ElementKind::InclusiveGateway => {
-                    ui.label(egui::RichText::new("A token of this instance is parked at this join, waiting for the other branch(es) to arrive.").weak().size(11.0));
+                    ui.label(egui::RichText::new(crate::t!("find-explain-join")).weak().size(11.0));
                 }
                 bpmn::ElementKind::EventBasedGateway => {
-                    ui.label(egui::RichText::new("The instance is waiting here for one of the following events.").weak().size(11.0));
+                    ui.label(egui::RichText::new(crate::t!("find-explain-event-gateway")).weak().size(11.0));
                 }
                 _ => {}
             }
         }
         if hits.len() > 4 {
-            ui.label(egui::RichText::new(format!("    … and {} more", hits.len() - 4)).weak().size(11.0));
+            ui.label(egui::RichText::new(format!("    {}", crate::t!("find-explain-more", n = hits.len() - 4))).weak().size(11.0));
         }
     }
     if el.is_some() && !hits.is_empty() {
         ui.horizontal(|ui| {
             striped_dot(ui, style.matched, style.external);
-            ui.label(egui::RichText::new("striped: both the element and an instance match").weak().size(11.0));
+            ui.label(egui::RichText::new(crate::t!("find-explain-striped")).weak().size(11.0));
         });
     }
     if is_current {
         ui.horizontal(|ui| {
             dot(ui, style.current_match);
             let n = view.find.targets(model).len();
-            ui.label(egui::RichText::new(format!("Current match {} of {n} (Enter / Shift+Enter cycle)", view.find.cursor + 1)).size(11.5));
+            ui.label(egui::RichText::new(crate::t!("find-explain-current", i = view.find.cursor + 1, n = n)).size(11.5));
         });
     }
 }
@@ -1390,25 +1390,25 @@ fn find_legend(ui: &mut Ui, view: &DiagramView, model: &Model, style: &DiagramSt
             if el_only > 0 {
                 ui.horizontal(|ui| {
                     dot(ui, style.matched);
-                    row(ui, format!("element text matches ({el_only})"));
+                    row(ui, crate::t!("find-legend-element", n = el_only));
                 });
             }
             if inst_only > 0 {
                 ui.horizontal(|ui| {
                     dot(ui, style.external);
-                    row(ui, format!("a running instance here matches ({inst_only})"));
+                    row(ui, crate::t!("find-legend-instance", n = inst_only));
                 });
             }
             if both > 0 {
                 ui.horizontal(|ui| {
                     striped_dot(ui, style.matched, style.external);
-                    row(ui, format!("both ({both})"));
+                    row(ui, crate::t!("find-legend-both", n = both));
                 });
             }
             if current.is_some() {
                 ui.horizontal(|ui| {
                     dot(ui, style.current_match);
-                    row(ui, "current match · Enter cycles".to_string());
+                    row(ui, crate::t!("find-legend-current"));
                 });
             }
         });

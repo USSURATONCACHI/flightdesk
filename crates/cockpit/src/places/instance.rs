@@ -111,7 +111,7 @@ impl InstancePlace {
                     None => format!("{} · {}", crate::util::ellipsize(&def, 14), crate::util::short_uuid(&self.id)),
                 }
             }
-            None => format!("inst {}", crate::util::short_uuid(&self.id)),
+            None => crate::t!("instance-tab-title", id = crate::util::short_uuid(&self.id)),
         }
     }
 
@@ -284,7 +284,7 @@ impl InstancePlace {
             if let Some(due) = &j.due_date {
                 if let Some(t) = crate::util::parse_time(due) {
                     let overdue = t < chrono::Utc::now() && j.retries > 0;
-                    let label = if j.retries == 0 { "failed".to_string() } else { crate::util::relative_from_now(t.with_timezone(&chrono::Utc)) };
+                    let label = if j.retries == 0 { crate::t!("job-failed") } else { crate::util::relative_from_now(t.with_timezone(&chrono::Utc)) };
                     o.timers.insert(act, (label, overdue || j.retries == 0));
                 }
             }
@@ -313,13 +313,13 @@ impl InstancePlace {
         // ---- toolbar ----
         egui::Panel::top(("inst-toolbar", &self.id)).frame(egui::Frame::new().fill(tokens.bg1).inner_margin(egui::Margin::symmetric(12, 6))).show(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.link(RichText::new("Definitions").weak()).clicked() {
+                if ui.link(RichText::new(crate::t!("place-definitions")).weak()).clicked() {
                     app.navigate(Nav::Definitions, NavMode::Here);
                 }
                 ui.label(RichText::new("›").weak());
                 if let Some(h) = self.hist.data.clone() {
                     let dname = app.cache.def_by_id(&h.process_definition_id).map(|d| d.display_name().to_string()).or(h.process_definition_name.clone()).or(h.process_definition_key.clone()).unwrap_or_default();
-                    if ui.link(RichText::new(format!("{dname} v{}", h.process_definition_version.unwrap_or(0))).weak()).on_hover_text("Open definition").clicked() {
+                    if ui.link(RichText::new(format!("{dname} v{}", h.process_definition_version.unwrap_or(0))).weak()).on_hover_text(crate::t!("common-open-definition")).clicked() {
                         app.navigate(Nav::Definition { id: h.process_definition_id.clone() }, if ui.input(|i| i.modifiers.shift) { NavMode::NewTab } else { NavMode::Here });
                     }
                     // ancestors
@@ -327,44 +327,44 @@ impl InstancePlace {
                         for a in chain.iter().rev() {
                             ui.label(RichText::new("›").weak());
                             let label = a.business_key.clone().unwrap_or_else(|| crate::util::short_uuid(&a.id));
-                            if ui.link(RichText::new(format!("↑ {label}")).weak()).on_hover_text(format!("Super instance {}", a.id)).clicked() {
+                            if ui.link(RichText::new(format!("↑ {label}")).weak()).on_hover_text(crate::t!("instance-super-tip", id = a.id.clone())).clicked() {
                                 app.navigate(Nav::Instance { id: a.id.clone() }, NavMode::Here);
                             }
                         }
                     }
                     ui.label(RichText::new("›").weak());
                     let title = h.business_key.clone().unwrap_or_else(|| crate::util::short_uuid(&self.id));
-                    let r = ui.add(egui::Label::new(RichText::new(&title).strong().size(15.0)).sense(egui::Sense::click())).on_hover_text("Click to copy business key");
+                    let r = ui.add(egui::Label::new(RichText::new(&title).strong().size(15.0)).sense(egui::Sense::click())).on_hover_text(crate::t!("instance-copy-bk-tip"));
                     if r.clicked() {
                         ctx.copy_text(title.clone());
                     }
                     let r = ui.add(egui::Label::new(RichText::new(crate::util::short_uuid(&self.id)).monospace().weak()).sense(egui::Sense::click())).on_hover_text(format!("{}\nClick to copy", self.id));
                     if r.clicked() {
                         ctx.copy_text(self.id.clone());
-                        app.toasts.push(ToastKind::Info, "Instance id copied");
+                        app.toasts.push(ToastKind::Info, crate::t!("toast-instance-id-copied"));
                     }
                     let st = h.state.clone().unwrap_or_else(|| "ACTIVE".into());
                     let st = if self.runtime.data.as_ref().map(|r| r.suspended).unwrap_or(false) { "SUSPENDED".to_string() } else { st };
                     pill(ui, state_label(&st), state_color(&st, &tokens));
                     let n_inc = self.overlays.incidents.values().sum::<u32>();
-                    if n_inc > 0 && badge(ui, &format!("{n_inc} incidents"), tokens.incident).clicked() {
+                    if n_inc > 0 && badge(ui, &crate::t!("n-incidents", n = n_inc), tokens.incident).clicked() {
                         self.dock_tab = 4;
                         app.dock_visible = true;
                     }
                     let n_tok = self.overlays.running.values().sum::<u32>();
                     if !finished && n_tok > 0 {
-                        badge(ui, &format!("{n_tok} token{}", if n_tok == 1 { "" } else { "s" }), tokens.running).on_hover_text("Shift+F fits the camera to the tokens");
+                        badge(ui, &crate::t!("n-tokens", n = n_tok), tokens.running).on_hover_text(crate::t!("instance-tokens-tip"));
                     }
                 } else {
                     ui.label(RichText::new(crate::util::short_uuid(&self.id)).monospace());
                     if let Some(e) = &self.hist.error {
-                        ui.label(RichText::new(if e.is_not_found() { "Instance not found (deleted, or history removed)".to_string() } else { e.short() }).color(tokens.incident));
+                        ui.label(RichText::new(if e.is_not_found() { crate::t!("instance-not-found") } else { e.short() }).color(tokens.incident));
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let age = self.activity.age().or(self.hist.age());
                     app.refresh_controls(ui, age, self.activity.is_loading() || self.hist.is_loading());
-                    if ui.button("🔍 Find").on_hover_text("Find element (Ctrl+F)").clicked() {
+                    if ui.button(format!("🔍 {}", crate::t!("common-find"))).on_hover_text(crate::t!("find-element-tip")).clicked() {
                         self.view.open_find();
                     }
                     self.action_buttons(ui, app, finished);
@@ -380,7 +380,7 @@ impl InstancePlace {
                     if let Some(e) = &self.hist.error {
                         ui.label(RichText::new(e.short()).color(tokens.incident));
                     } else {
-                        ui.label(RichText::new("Loading instance…").weak());
+                        ui.label(RichText::new(crate::t!("instance-loading")).weak());
                     }
                 });
             });
@@ -401,7 +401,7 @@ impl InstancePlace {
                     let facts = self.facts_for(&model_dock, r);
                     actions = inspector::show(ui, &model_dock, r, &facts, true);
                 }
-                None => crate::widgets::empty_state(ui, "Select an element to inspect it.\nTab cycles elements · hold Alt to inspect on hover."),
+                None => crate::widgets::empty_state(ui, &crate::t!("inspector-empty-instance")),
             },
             2 => self.variables_dock(ui, app, &model_dock),
             3 => self.tasks_dock(ui, app, &model_dock, &mut select_from_dock),
@@ -426,8 +426,8 @@ impl InstancePlace {
                 let t = self.trace.as_mut().unwrap();
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(&t.title).strong());
-                    ui.add(egui::TextEdit::singleline(&mut t.filter).hint_text("filter lines").desired_width(200.0));
-                    if ui.small_button("Copy").clicked() {
+                    ui.add(egui::TextEdit::singleline(&mut t.filter).hint_text(crate::t!("trace-filter-hint")).desired_width(200.0));
+                    if ui.small_button(crate::t!("common-copy")).clicked() {
                         ctx.copy_text(t.text.clone());
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -457,13 +457,13 @@ impl InstancePlace {
         let ext = self.external_tasks.data.clone().unwrap_or_default();
         let extra = move |ui: &mut egui::Ui, act: &str| {
             for t in tasks.iter().filter(|t| t.task_definition_key.as_deref() == Some(act)) {
-                ui.label(format!("task: {}{}", t.assignee.clone().map(|a| format!("assigned to {a}")).unwrap_or_else(|| "unassigned".into()), t.due.as_deref().map(|d| format!(" · due {}", crate::util::fmt_relative(d))).unwrap_or_default()));
+                ui.label(format!("{}{}", crate::t!("extra-task", who = t.assignee.clone().map(|a| crate::t!("assigned-to", user = a)).unwrap_or_else(|| crate::t!("task-unassigned"))), t.due.as_deref().map(|d| format!(" · {}", crate::t!("due-when", when = crate::util::fmt_relative(d)))).unwrap_or_default()));
             }
             for j in jobs.iter().filter(|j| job_acts.get(&j.id).map(|a| a == act).unwrap_or(false)) {
-                ui.label(format!("job: due {} · retries {}", j.due_date.as_deref().map(crate::util::fmt_relative).unwrap_or_else(|| "now".into()), j.retries));
+                ui.label(crate::t!("extra-job", due = j.due_date.as_deref().map(crate::util::fmt_relative).unwrap_or_else(|| crate::t!("common-now")), retries = j.retries));
             }
             for e in ext.iter().filter(|e| e.activity_id.as_deref() == Some(act)) {
-                ui.label(format!("external: topic {} · {}", e.topic_name.clone().unwrap_or_default(), e.worker_id.clone().map(|w| format!("locked by {w}")).unwrap_or_else(|| "unlocked".into())));
+                ui.label(crate::t!("extra-external", topic = e.topic_name.clone().unwrap_or_default(), lock = e.worker_id.clone().map(|w| crate::t!("locked-by", worker = w)).unwrap_or_else(|| crate::t!("ext-unlocked"))));
             }
         };
         let mut mod_actions: Vec<ModAction> = vec![];
@@ -478,21 +478,21 @@ impl InstancePlace {
                     let e = &model2.elements[i];
                     if e.kind.is_flow_node() && !matches!(e.kind, bpmn::ElementKind::BoundaryEvent | bpmn::ElementKind::StartEvent) {
                         ui.separator();
-                        ui.label(RichText::new("Modify").weak());
-                        if ui.button("Start token before").clicked() {
+                        ui.label(RichText::new(crate::t!("ctx-modify")).weak());
+                        if ui.button(crate::t!("mod-start-before")).clicked() {
                             mod_actions.push(ModAction::StartBefore(e.id.clone()));
                             ui.close();
                         }
-                        if ui.button("Start token after").clicked() {
+                        if ui.button(crate::t!("mod-start-after")).clicked() {
                             mod_actions.push(ModAction::StartAfter(e.id.clone()));
                             ui.close();
                         }
                         if overlays_running.contains_key(&e.id) {
-                            if ui.button("Cancel tokens here").clicked() {
+                            if ui.button(crate::t!("mod-cancel-here")).clicked() {
                                 mod_actions.push(ModAction::Cancel(e.id.clone()));
                                 ui.close();
                             }
-                            if ui.button("Move token from here to…").clicked() {
+                            if ui.button(crate::t!("mod-move-from")).clicked() {
                                 mod_actions.push(ModAction::MoveFrom(e.id.clone()));
                                 ui.close();
                             }
@@ -529,7 +529,7 @@ impl InstancePlace {
             }
             app.last_diagram_viewport = out.viewport;
             if out.copied {
-                app.toasts.push(ToastKind::Info, "Element id copied");
+                app.toasts.push(ToastKind::Info, crate::t!("toast-element-id-copied"));
             }
             if let Some(bpmn::Ref::Element(i)) = out.enter_pressed {
                 let e = &model.elements[i];
@@ -603,9 +603,9 @@ impl InstancePlace {
             }
         }
         app.status_hint = if self.view.pick.is_some() {
-            "Pick a target element on the diagram · Esc cancels".into()
+            crate::t!("hint-pick")
         } else {
-            "Shift+F fit tokens · Enter inspect / drill into called instance · right-click: modify tokens · Ctrl+1…9 dock tabs · ? help".into()
+            crate::t!("hint-instance")
         };
     }
 
@@ -618,9 +618,9 @@ impl InstancePlace {
         f.executed = self.overlays.completed.get(id).copied();
         if let Some(ai) = &self.activity.data {
             for t in ai.tokens().iter().filter(|t| &t.activity_id == id) {
-                f.rows.push((if t.is_transition { "async continuation".into() } else { "token".into() }, camunda::short_id(&t.id)));
+                f.rows.push((if t.is_transition { crate::t!("token-async") } else { crate::t!("token") }, camunda::short_id(&t.id)));
                 if !t.path.is_empty() {
-                    f.rows.push(("scope".into(), t.path.join(" › ")));
+                    f.rows.push((crate::i18n::kv_label("scope"), t.path.join(" › ")));
                 }
             }
         }
@@ -630,40 +630,40 @@ impl InstancePlace {
                 if let Some(d) = &t.due {
                     f.rows.push(("due".into(), format!("{} ({})", crate::util::fmt_local(d), crate::util::fmt_relative(d))));
                 }
-                f.rows.push(("task id".into(), t.id.clone()));
+                f.rows.push((crate::i18n::kv_label("task id"), t.id.clone()));
             }
         }
         if let Some(jobs) = &self.jobs.data {
             for j in jobs.iter().filter(|j| self.job_activity(j).as_deref() == Some(id)) {
                 f.rows.push(("job due".into(), j.due_date.as_deref().map(|d| format!("{} ({})", crate::util::fmt_local(d), crate::util::fmt_relative(d))).unwrap_or_else(|| "asap".into())));
-                f.rows.push(("job retries".into(), j.retries.to_string()));
+                f.rows.push((crate::i18n::kv_label("job retries"), j.retries.to_string()));
                 if let Some(e) = &j.exception_message {
-                    f.rows.push(("job error".into(), crate::util::ellipsize(e, 200)));
+                    f.rows.push((crate::i18n::kv_label("job error"), crate::util::ellipsize(e, 200)));
                 }
             }
         }
         if let Some(ext) = &self.external_tasks.data {
             for e in ext.iter().filter(|e| e.activity_id.as_deref() == Some(id)) {
-                f.rows.push(("topic".into(), e.topic_name.clone().unwrap_or_default()));
-                f.rows.push(("worker".into(), e.worker_id.clone().unwrap_or_else(|| "— (unlocked)".into())));
+                f.rows.push((crate::i18n::kv_label("topic"), e.topic_name.clone().unwrap_or_default()));
+                f.rows.push((crate::i18n::kv_label("worker"), e.worker_id.clone().unwrap_or_else(|| crate::t!("ext-not-locked"))));
                 if let Some(r) = e.retries {
-                    f.rows.push(("retries".into(), r.to_string()));
+                    f.rows.push((crate::i18n::kv_label("retries"), r.to_string()));
                 }
                 if let Some(m) = &e.error_message {
-                    f.rows.push(("error".into(), crate::util::ellipsize(m, 200)));
+                    f.rows.push((crate::i18n::kv_label("error"), crate::util::ellipsize(m, 200)));
                 }
             }
         }
         if let Some(inc) = &self.incidents.data {
             for i in inc.iter().filter(|x| x.activity_id.as_deref() == Some(id) && x.end_time.is_none()) {
-                f.rows.push((format!("incident ({})", i.incident_type), crate::util::ellipsize(i.incident_message.as_deref().unwrap_or(""), 200)));
+                f.rows.push((crate::t!("incident-of-type", type = i.incident_type.clone()), crate::util::ellipsize(i.incident_message.as_deref().unwrap_or(""), 200)));
             }
         }
         if let Some(h) = &self.history_acts.data {
             let mut visits: Vec<&HistoricActivityInstance> = h.iter().filter(|a| a.base_activity_id() == id && !a.is_multi_instance_body()).collect();
             visits.sort_by(|a, b| b.start_time.cmp(&a.start_time));
             for v in visits.iter().take(3) {
-                let dur = v.duration_in_millis.map(crate::util::human_millis).unwrap_or_else(|| "running".into());
+                let dur = v.duration_in_millis.map(crate::util::human_millis).unwrap_or_else(|| crate::t!("state-running-lower"));
                 f.rows.push(("visited".into(), format!("{} · {}{}", v.start_time.as_deref().map(crate::util::fmt_local_short).unwrap_or_default(), dur, if v.canceled { " · cancelled" } else { "" })));
             }
         }
@@ -673,45 +673,45 @@ impl InstancePlace {
     fn action_buttons(&mut self, ui: &mut egui::Ui, app: &mut App, finished: bool) {
         let id = self.id.clone();
         if finished {
-            if ui.button("Restart…").on_hover_text("Start a new instance from the history of this one (Modify tab)").clicked() {
+            if ui.button(crate::t!("instance-restart")).on_hover_text(crate::t!("instance-restart-tip")).clicked() {
                 self.dock_tab = 9;
                 app.dock_visible = true;
             }
             return;
         }
         let suspended = self.runtime.data.as_ref().map(|r| r.suspended).unwrap_or(false);
-        let menu = ui.button("Actions ▾");
+        let menu = ui.button(format!("{} ▾", crate::t!("instance-actions")));
         egui::Popup::menu(&menu).show(|ui| {
-            if ui.button(if suspended { "Activate instance" } else { "Suspend instance" }).clicked() {
+            if ui.button(if suspended { crate::t!("instance-activate") } else { crate::t!("instance-suspend") }).clicked() {
                 let i = id.clone();
-                app.run_action(move |c| async move { c.suspend_instance(&i, !suspended).await }, if suspended { "Instance activated" } else { "Instance suspended" }, "Could not change suspension");
+                app.run_action(move |c| async move { c.suspend_instance(&i, !suspended).await }, if suspended { crate::t!("toast-instance-activated") } else { crate::t!("toast-instance-suspended") }, crate::t!("toast-suspension-failed"));
             }
             let failed: Vec<String> = self.jobs.data.as_ref().map(|j| j.iter().filter(|j| j.retries == 0).map(|j| j.id.clone()).collect()).unwrap_or_default();
-            if ui.add_enabled(!failed.is_empty(), egui::Button::new(format!("Retry {} failed job{}", failed.len(), if failed.len() == 1 { "" } else { "s" }))).clicked() {
+            if ui.add_enabled(!failed.is_empty(), egui::Button::new(crate::t!("instance-retry-failed-jobs", n = failed.len()))).clicked() {
                 for j in failed {
                     app.action_set_job_retries(j, 1);
                 }
             }
             let failed_ext: Vec<String> = self.external_tasks.data.as_ref().map(|e| e.iter().filter(|e| e.retries == Some(0)).map(|e| e.id.clone()).collect()).unwrap_or_default();
-            if !failed_ext.is_empty() && ui.button(format!("Retry {} failed external task(s)", failed_ext.len())).clicked() {
+            if !failed_ext.is_empty() && ui.button(crate::t!("instance-retry-failed-external", n = failed_ext.len())).clicked() {
                 for e in failed_ext {
                     app.action_set_external_task_retries(e, 1);
                 }
             }
-            if ui.button("Modify tokens…").clicked() {
+            if ui.button(crate::t!("instance-modify-tokens")).clicked() {
                 self.dock_tab = 9;
                 app.dock_visible = true;
             }
-            if ui.button("Copy Cockpit link").clicked() {
+            if ui.button(crate::t!("cmd-copy-cockpit-link")).clicked() {
                 app.copy_cockpit_link();
             }
             ui.separator();
-            if ui.button(RichText::new("Delete instance…").color(app.tokens.incident)).clicked() {
+            if ui.button(RichText::new(crate::t!("instance-delete")).color(app.tokens.incident)).clicked() {
                 let bk = self.hist.data.as_ref().and_then(|h| h.business_key.clone()).unwrap_or_default();
                 let i = id.clone();
-                app.confirm = Some(Confirm::new("Delete process instance", format!("Delete instance {} {}?\nAll its tokens, tasks and jobs are removed. This cannot be undone.", crate::util::short_uuid(&i), if bk.is_empty() { String::new() } else { format!("(business key {bk})") }), "Delete", move |app: &mut App| {
+                app.confirm = Some(Confirm::new(crate::t!("instance-delete-title"), crate::t!("instance-delete-body", id = crate::util::short_uuid(&i), bk = if bk.is_empty() { String::new() } else { format!("({})", crate::t!("find-explain-business-key", key = bk.clone())) }), crate::t!("common-delete"), move |app: &mut App| {
                     let i2 = i.clone();
-                    app.run_action(move |c| async move { c.delete_instance(&i2, Some("deleted via Flightdeck"), false, false, false).await }, "Instance deleted", "Could not delete instance");
+                    app.run_action(move |c| async move { c.delete_instance(&i2, Some("deleted via Flightdeck"), false, false, false).await }, crate::t!("toast-instance-deleted"), crate::t!("toast-instance-delete-failed"));
                 }));
             }
         });
@@ -774,7 +774,7 @@ impl InstancePlace {
             if let Some(ai) = &self.activity.data {
                 let toks = ai.tokens();
                 if toks.is_empty() {
-                    ui.label(RichText::new("No active tokens").weak());
+                    ui.label(RichText::new(crate::t!("tokens-none")).weak());
                 }
                 for t in toks {
                     let name = model.element_by_id(&t.activity_id).map(|e| e.display_name().to_string()).unwrap_or(t.activity_id.clone());
@@ -788,12 +788,12 @@ impl InstancePlace {
                         }
                         ui.label(RichText::new(t.activity_type.clone().unwrap_or_default()).weak().small());
                         if !t.path.is_empty() {
-                            ui.label(RichText::new(format!("in {}", t.path.join(" › "))).weak().small());
+                            ui.label(RichText::new(crate::t!("tokens-in", path = t.path.join(" › "))).weak().small());
                         }
                     });
                 }
             } else if self.finished() {
-                ui.label(RichText::new("Finished — no tokens").weak());
+                ui.label(RichText::new(crate::t!("tokens-finished")).weak());
             }
             ui.horizontal_wrapped(|ui| {
                 let cnt = |n: Option<usize>| n.map(|n| n.to_string()).unwrap_or_else(|| "…".into());
@@ -802,7 +802,7 @@ impl InstancePlace {
                     self.dock_tab = 3;
                 }
                 let inc = self.incidents.data.as_ref().map(|v| v.iter().filter(|i| i.end_time.is_none()).count()).unwrap_or(0);
-                if ui.add(egui::Button::new(RichText::new(format!("{inc} incidents")).color(if inc > 0 { tokens.incident } else { tokens.fg1 })).small()).clicked() {
+                if ui.add(egui::Button::new(RichText::new(crate::t!("n-incidents", n = inc)).color(if inc > 0 { tokens.incident } else { tokens.fg1 })).small()).clicked() {
                     self.dock_tab = 4;
                 }
                 if ui.add(egui::Button::new(format!("{} jobs", cnt(self.jobs.data.as_ref().map(|v| v.len())))).small()).clicked() {
@@ -822,13 +822,13 @@ impl InstancePlace {
 
     fn scope_name(&self, model: &bpmn::Model, v: &VariableInstance) -> String {
         if v.execution_id.as_deref() == Some(self.id.as_str()) || v.execution_id.is_none() {
-            return "process".into();
+            return crate::t!("scope-process");
         }
         if let Some(ai) = &self.activity.data {
             for a in ai.all() {
                 if a.execution_ids.iter().any(|e| Some(e) == v.execution_id.as_ref()) {
                     if a.activity_id == a.process_definition_id || a.parent_activity_instance_id.is_none() {
-                        return "process".into();
+                        return crate::t!("scope-process");
                     }
                     return model.element_by_id(&a.activity_id).map(|e| e.display_name().to_string()).unwrap_or(a.activity_id.clone());
                 }
@@ -841,9 +841,9 @@ impl InstancePlace {
             }
         }
         if let Some(t) = &v.task_id {
-            return format!("task {}", crate::util::short_uuid(t));
+            return crate::t!("scope-task", id = crate::util::short_uuid(t));
         }
-        format!("execution {}", v.execution_id.as_deref().map(crate::util::short_uuid).unwrap_or_default())
+        crate::t!("scope-execution", id = v.execution_id.as_deref().map(crate::util::short_uuid).unwrap_or_default())
     }
 
     fn variables_dock(&mut self, ui: &mut egui::Ui, app: &mut App, model: &Arc<bpmn::Model>) {
@@ -852,17 +852,17 @@ impl InstancePlace {
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 170.0).max(120.0);
             ui.add_sized([w, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique(("var-filter", &self.id)), &mut self.var_filter, "Filter name or value", &mut self.var_focus));
-            if !finished && ui.button("+ Add").clicked() {
+            if !finished && ui.button(crate::t!("vars-add")).clicked() {
                 self.var_edit = Some(VarEdit { name: String::new(), type_: "String".into(), text: String::new(), is_new: true, error: None });
             }
-            if ui.button("Copy JSON").on_hover_text("Copy all variables as a JSON object").clicked() {
+            if ui.button(crate::t!("vars-copy-json")).on_hover_text(crate::t!("vars-copy-json-tip")).clicked() {
                 if let Some(vars) = &self.variables.data {
                     let mut m = serde_json::Map::new();
                     for v in vars {
                         m.insert(v.name.clone(), v.value.clone());
                     }
                     ui.ctx().copy_text(serde_json::to_string_pretty(&serde_json::Value::Object(m)).unwrap_or_default());
-                    app.toasts.push(ToastKind::Info, "Variables copied as JSON");
+                    app.toasts.push(ToastKind::Info, crate::t!("toast-vars-copied"));
                 }
             }
             loader_status_inline(ui, &self.variables, &tokens);
@@ -878,7 +878,7 @@ impl InstancePlace {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     if ed.is_new {
-                        let r = ui.add(egui::TextEdit::singleline(&mut ed.name).hint_text("name").desired_width(160.0));
+                        let r = ui.add(egui::TextEdit::singleline(&mut ed.name).hint_text(crate::t!("vars-name-hint")).desired_width(160.0));
                         if ed.name.is_empty() {
                             r.request_focus();
                         }
@@ -900,14 +900,14 @@ impl InstancePlace {
                     ui.label(RichText::new(e).color(tokens.incident).small());
                 }
                 ui.horizontal(|ui| {
-                    if ui.button("Save  (Ctrl+Enter)").clicked() || (r.has_focus() && ui.input(|i| i.modifiers.command && i.key_pressed(Key::Enter))) {
+                    if ui.button(format!("{}  (Ctrl+Enter)", crate::t!("common-save"))).clicked() || (r.has_focus() && ui.input(|i| i.modifiers.command && i.key_pressed(Key::Enter))) {
                         save = true;
                     }
-                    if ui.button("Cancel").clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
+                    if ui.button(crate::t!("common-cancel")).clicked() || ui.input(|i| i.key_pressed(Key::Escape)) {
                         cancel = true;
                     }
                     if ed.type_ == "Date" {
-                        ui.label(RichText::new("format: 2026-10-20T10:00:00.000+0300").weak().small());
+                        ui.label(RichText::new(crate::t!("vars-date-format")).weak().small());
                     }
                 });
             });
@@ -918,7 +918,7 @@ impl InstancePlace {
                     Ok(val) => {
                         let name = ed.name.trim().to_string();
                         if name.is_empty() {
-                            ed.error = Some("Name is required".into());
+                            ed.error = Some(crate::t!("vars-name-required"));
                         } else {
                             let pid = self.id.clone();
                             let old = self.variables.data.as_ref().and_then(|v| v.iter().find(|v| v.name == name)).map(|v| v.as_value());
@@ -934,14 +934,14 @@ impl InstancePlace {
                                             let n3 = name.clone();
                                             Box::new(move |app: &mut App| {
                                                 let n4 = n3.clone();
-                                                app.run_action(move |c| async move { c.put_process_variable(&pid2, &n4, &o).await }, format!("Variable {n3} restored"), "Undo failed");
+                                                app.run_action(move |c| async move { c.put_process_variable(&pid2, &n4, &o).await }, crate::t!("toast-var-restored", name = n3.clone()), crate::t!("toast-undo-failed"));
                                             }) as AppAction
                                         });
-                                        app.toasts.push_full(ToastKind::Success, format!("Variable {name} saved"), None, undo);
+                                        app.toasts.push_full(ToastKind::Success, crate::t!("toast-var-saved", name = name.clone()), None, undo);
                                         app.bump_refresh();
                                     }
                                     Err(e) => {
-                                        app.toasts.error(format!("Could not save variable {name}"), Some(e.to_string()));
+                                        app.toasts.error(crate::t!("toast-var-save-failed", name = name.clone()), Some(e.to_string()));
                                     }
                                 },
                             );
@@ -961,7 +961,7 @@ impl InstancePlace {
         let f = self.var_filter.to_lowercase();
         let rows: Vec<&VariableInstance> = vars.iter().filter(|v| f.is_empty() || v.name.to_lowercase().contains(&f) || v.value.to_string().to_lowercase().contains(&f) || v.type_.as_deref().unwrap_or("").to_lowercase().contains(&f)).collect();
         if rows.is_empty() {
-            crate::widgets::empty_state(ui, if vars.is_empty() { "No variables." } else { "No variable matches the filter." });
+            crate::widgets::empty_state(ui, &if vars.is_empty() { crate::t!("vars-empty") } else { crate::t!("vars-no-match") });
             return;
         }
         ui.label(RichText::new(format!("{} of {}", rows.len(), vars.len())).weak().small());
@@ -993,7 +993,7 @@ impl InstancePlace {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     let arrow = ui.add(egui::Label::new(RichText::new(if expanded { "▾" } else { "▸" }).weak()).sense(egui::Sense::click()));
-                    let name = ui.add(egui::Label::new(RichText::new(&v.name).strong().size(12.5)).sense(egui::Sense::click())).on_hover_text("Click to expand · double-click to copy name");
+                    let name = ui.add(egui::Label::new(RichText::new(&v.name).strong().size(12.5)).sense(egui::Sense::click())).on_hover_text(crate::t!("vars-row-tip"));
                     if arrow.clicked() || name.clicked() {
                         self.var_cursor = i;
                         if !self.var_expanded.remove(&v.name) {
@@ -1010,10 +1010,10 @@ impl InstancePlace {
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if !finished {
-                            if ui.add(egui::Button::new("✎").small().frame(false)).on_hover_text("Edit").clicked() {
+                            if ui.add(egui::Button::new("✎").small().frame(false)).on_hover_text(crate::t!("common-edit")).clicked() {
                                 start_edit = Some(VarEdit { name: v.name.clone(), type_: v.type_.clone().unwrap_or_else(|| "String".into()), text: edit_text(v), is_new: false, error: None });
                             }
-                            if ui.add(egui::Button::new("🗑").small().frame(false)).on_hover_text("Delete").clicked() {
+                            if ui.add(egui::Button::new("🗑").small().frame(false)).on_hover_text(crate::t!("common-delete")).clicked() {
                                 delete = Some((v.name.clone(), v.execution_id.clone().unwrap_or_default()));
                             }
                         }
@@ -1030,7 +1030,7 @@ impl InstancePlace {
                 } else {
                     value_viewer(ui, v, &f, &tokens);
                     if let Some(e) = &v.error_message {
-                        ui.label(RichText::new(format!("deserialisation error: {e}")).color(tokens.incident).small());
+                        ui.label(RichText::new(crate::t!("vars-deser-error", error = e.to_string())).color(tokens.incident).small());
                     }
                     let info = &v.value_info;
                     if info.is_object() && !info.as_object().unwrap().is_empty() {
@@ -1045,7 +1045,7 @@ impl InstancePlace {
         if let Some((name, _exec)) = delete {
             let pid = self.id.clone();
             let old = vars.iter().find(|v| v.name == name).map(|v| v.as_value());
-            app.confirm = Some(Confirm::new("Delete variable", format!("Delete variable “{name}” from this instance?"), "Delete", move |app: &mut App| {
+            app.confirm = Some(Confirm::new(crate::t!("vars-delete-title"), crate::t!("vars-delete-body", name = name.clone()), crate::t!("common-delete"), move |app: &mut App| {
                 let Some(net) = &app.net else { return };
                 let p2 = pid.clone();
                 let n2 = name.clone();
@@ -1058,14 +1058,14 @@ impl InstancePlace {
                                 let p3 = pid.clone();
                                 Box::new(move |app: &mut App| {
                                     let n4 = n3.clone();
-                                    app.run_action(move |c| async move { c.put_process_variable(&p3, &n4, &o).await }, format!("Variable {n3} restored"), "Undo failed");
+                                    app.run_action(move |c| async move { c.put_process_variable(&p3, &n4, &o).await }, crate::t!("toast-var-restored", name = n3.clone()), crate::t!("toast-undo-failed"));
                                 }) as AppAction
                             });
-                            app.toasts.push_full(ToastKind::Success, format!("Variable {name} deleted"), None, undo);
+                            app.toasts.push_full(ToastKind::Success, crate::t!("toast-var-deleted", name = name.clone()), None, undo);
                             app.bump_refresh();
                         }
                         Err(e) => {
-                            app.toasts.error(format!("Could not delete {name}"), Some(e.to_string()));
+                            app.toasts.error(crate::t!("toast-var-delete-failed", name = name.clone()), Some(e.to_string()));
                         }
                     },
                 );
@@ -1080,14 +1080,14 @@ impl InstancePlace {
         loader_status_inline(ui, &self.tasks, &tokens);
         let Some(tasks) = self.tasks.data.clone() else {
             if self.finished() {
-                crate::widgets::empty_state(ui, "Finished instance — no open tasks.");
+                crate::widgets::empty_state(ui, &crate::t!("tasks-finished"));
             } else {
                 ui.spinner();
             }
             return;
         };
         if tasks.is_empty() {
-            crate::widgets::empty_state(ui, "No open user tasks.");
+            crate::widgets::empty_state(ui, &crate::t!("tasks-empty"));
             return;
         }
         let me = app.profile.user.clone();
@@ -1097,23 +1097,23 @@ impl InstancePlace {
             egui::Frame::new().fill(tokens.bg2).stroke(egui::Stroke::new(1.0, tokens.bg3)).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
-                    if ui.link(RichText::new(&name).strong()).on_hover_text("Select on diagram").clicked() {
+                    if ui.link(RichText::new(&name).strong()).on_hover_text(crate::t!("common-select-on-diagram")).clicked() {
                         if let Some(i) = model.element_idx(&act) {
                             *select = Some(bpmn::Ref::Element(i));
                         }
                     }
                     if t.suspended {
-                        pill(ui, "suspended", tokens.suspended);
+                        pill(ui, &crate::t!("state-suspended"), tokens.suspended);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(format!("created {}", t.created.as_deref().map(crate::util::fmt_relative).unwrap_or_default())).weak().small());
+                        ui.label(RichText::new(crate::t!("created-when", when = t.created.as_deref().map(crate::util::fmt_relative).unwrap_or_default())).weak().small());
                     });
                 });
                 kv_mono(ui, "task id", &t.id);
                 if let Some(d) = &t.due {
                     let overdue = crate::util::parse_time(d).map(|x| x < chrono::Utc::now()).unwrap_or(false);
                     ui.horizontal(|ui| {
-                        ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new("due").weak().size(12.0)).halign(egui::Align::Max));
+                        ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(crate::i18n::kv_label("due")).weak().size(12.0)).halign(egui::Align::Max));
                         ui.label(RichText::new(format!("{} ({})", crate::util::fmt_local(d), crate::util::fmt_relative(d))).color(if overdue { tokens.incident } else { tokens.fg0 }));
                     });
                 }
@@ -1126,12 +1126,12 @@ impl InstancePlace {
                 }
                 // assignee editor
                 ui.horizontal(|ui| {
-                    ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new("assignee").weak().size(12.0)).halign(egui::Align::Max));
+                    ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(crate::i18n::kv_label("assignee")).weak().size(12.0)).halign(egui::Align::Max));
                     let buf = self.assignee_edit.entry(t.id.clone()).or_insert_with(|| t.assignee.clone().unwrap_or_default());
-                    let r = ui.add(egui::TextEdit::singleline(buf).hint_text("unassigned").desired_width(140.0));
+                    let r = ui.add(egui::TextEdit::singleline(buf).hint_text(crate::t!("task-unassigned")).desired_width(140.0));
                     let changed = buf.trim() != t.assignee.as_deref().unwrap_or("");
                     let tid = t.id.clone();
-                    if changed && (ui.small_button("Set").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))) {
+                    if changed && (ui.small_button(crate::t!("common-set")).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)))) {
                         let user = buf.trim().to_string();
                         let u = if user.is_empty() { None } else { Some(user.clone()) };
                         if let Some(u) = &u {
@@ -1141,19 +1141,19 @@ impl InstancePlace {
                                 app.settings_dirty = true;
                             }
                         }
-                        app.run_action(move |c| async move { c.set_assignee(&tid, u.as_deref()).await }, if user.is_empty() { "Task unassigned".to_string() } else { format!("Assigned to {user}") }, "Could not set assignee");
+                        app.run_action(move |c| async move { c.set_assignee(&tid, u.as_deref()).await }, if user.is_empty() { crate::t!("toast-task-unassigned") } else { crate::t!("assigned-to", user = user.clone()) }, crate::t!("toast-assign-failed"));
                     }
                     if !me.is_empty() && t.assignee.as_deref() != Some(me.as_str()) {
                         let tid = t.id.clone();
                         let me2 = me.clone();
-                        if ui.small_button("Claim").on_hover_text(format!("Claim as {me}")).clicked() {
-                            app.run_action(move |c| async move { c.claim_task(&tid, &me2).await }, "Task claimed", "Could not claim");
+                        if ui.small_button(crate::t!("task-claim")).on_hover_text(crate::t!("task-claim-tip", user = me.clone())).clicked() {
+                            app.run_action(move |c| async move { c.claim_task(&tid, &me2).await }, crate::t!("toast-task-claimed"), crate::t!("toast-claim-failed"));
                         }
                     }
                     if t.assignee.is_some() {
                         let tid = t.id.clone();
-                        if ui.small_button("Unclaim").clicked() {
-                            app.run_action(move |c| async move { c.unclaim_task(&tid).await }, "Task unclaimed", "Could not unclaim");
+                        if ui.small_button(crate::t!("task-unclaim")).clicked() {
+                            app.run_action(move |c| async move { c.unclaim_task(&tid).await }, crate::t!("toast-task-unclaimed"), crate::t!("toast-unclaim-failed"));
                         }
                     }
                     if !app.settings.recent_users.is_empty() {
@@ -1163,7 +1163,7 @@ impl InstancePlace {
                                 if ui.button(&u).clicked() {
                                     let tid = t.id.clone();
                                     let u2 = u.clone();
-                                    app.run_action(move |c| async move { c.set_assignee(&tid, Some(&u2)).await }, format!("Assigned to {u}"), "Could not set assignee");
+                                    app.run_action(move |c| async move { c.set_assignee(&tid, Some(&u2)).await }, crate::t!("assigned-to", user = u.clone()), crate::t!("toast-assign-failed"));
                                 }
                             }
                         });
@@ -1171,23 +1171,23 @@ impl InstancePlace {
                 });
                 ui.horizontal(|ui| {
                     let tid = t.id.clone();
-                    if ui.small_button("Due +1 day").clicked() {
+                    if ui.small_button(crate::t!("task-due-plus-day")).clicked() {
                         let mut t2 = t.clone();
                         t2.due = Some(crate::util::format_camunda(chrono::Local::now() + chrono::Duration::days(1)));
-                        app.run_action(move |c| async move { c.update_task(&t2).await }, "Due date set to tomorrow", "Could not set due date");
+                        app.run_action(move |c| async move { c.update_task(&t2).await }, crate::t!("toast-due-tomorrow"), crate::t!("toast-due-failed"));
                     }
-                    if t.due.is_some() && ui.small_button("Clear due").clicked() {
+                    if t.due.is_some() && ui.small_button(crate::t!("task-clear-due")).clicked() {
                         let mut t2 = t.clone();
                         t2.due = None;
-                        app.run_action(move |c| async move { c.update_task(&t2).await }, "Due date cleared", "Could not clear due date");
+                        app.run_action(move |c| async move { c.update_task(&t2).await }, crate::t!("toast-due-cleared"), crate::t!("toast-due-clear-failed"));
                     }
                     let _ = tid;
                     let tid = t.id.clone();
-                    if ui.small_button("Complete…").on_hover_text("Complete the task without variables").clicked() {
+                    if ui.small_button(crate::t!("task-complete")).on_hover_text(crate::t!("task-complete-tip")).clicked() {
                         let name2 = name.clone();
-                        app.confirm = Some(Confirm::new("Complete task", format!("Complete task “{name2}” with no variables? The process continues."), "Complete", move |app: &mut App| {
+                        app.confirm = Some(Confirm::new(crate::t!("task-complete-title"), crate::t!("task-complete-body", name = name2.clone()), crate::t!("task-complete-button"), move |app: &mut App| {
                             let tid2 = tid.clone();
-                            app.run_action(move |c| async move { c.complete_task(&tid2, &serde_json::json!({})).await }, "Task completed", "Could not complete task");
+                            app.run_action(move |c| async move { c.complete_task(&tid2, &serde_json::json!({})).await }, crate::t!("toast-task-completed"), crate::t!("toast-task-complete-failed"));
                         }));
                     }
                 });
@@ -1206,7 +1206,7 @@ impl InstancePlace {
             return;
         };
         if list.is_empty() {
-            crate::widgets::empty_state(ui, "No incidents.");
+            crate::widgets::empty_state(ui, &crate::t!("incidents-none"));
             return;
         }
         for inc in &list {
@@ -1223,14 +1223,14 @@ impl InstancePlace {
                         }
                     }
                     if resolved {
-                        ui.label(RichText::new(if inc.resolved == Some(true) { "resolved" } else if inc.deleted == Some(true) { "deleted" } else { "closed" }).weak().small());
+                        ui.label(RichText::new(if inc.resolved == Some(true) { crate::t!("inc-resolved") } else if inc.deleted == Some(true) { crate::t!("inc-deleted") } else { crate::t!("inc-closed") }).weak().small());
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(RichText::new(inc.time().map(crate::util::fmt_relative).unwrap_or_default()).weak().small()).on_hover_text(inc.time().map(crate::util::fmt_local).unwrap_or_default());
                     });
                 });
                 let msg = inc.incident_message.clone().unwrap_or_default();
-                let r = ui.add(egui::Label::new(RichText::new(&msg).size(12.0)).wrap().sense(egui::Sense::click())).on_hover_text("Click to copy");
+                let r = ui.add(egui::Label::new(RichText::new(&msg).size(12.0)).wrap().sense(egui::Sense::click())).on_hover_text(crate::t!("common-click-to-copy"));
                 if r.clicked() {
                     ui.ctx().copy_text(msg.clone());
                 }
@@ -1256,35 +1256,35 @@ impl InstancePlace {
                     ui.horizontal(|ui| {
                         match (inc.incident_type.as_str(), inc.configuration.clone()) {
                             ("failedJob", Some(job)) => {
-                                if ui.small_button("Retry (retries=1)").clicked() {
+                                if ui.small_button(crate::t!("inc-retry-1")).clicked() {
                                     app.action_set_job_retries(job.clone(), 1);
                                 }
-                                if ui.small_button("Retries=3").clicked() {
+                                if ui.small_button(crate::t!("inc-retries-3")).clicked() {
                                     app.action_set_job_retries(job.clone(), 3);
                                 }
-                                if ui.small_button("Stack trace").clicked() {
-                                    self.load_trace(app, format!("Job {} stack trace", crate::util::short_uuid(&job)), TraceSource::Job(job.clone()));
+                                if ui.small_button(crate::t!("inc-stack-trace")).clicked() {
+                                    self.load_trace(app, crate::t!("trace-job-title", id = crate::util::short_uuid(&job)), TraceSource::Job(job.clone()));
                                 }
                             }
                             ("failedExternalTask", Some(et)) => {
-                                if ui.small_button("Retry (retries=1)").clicked() {
+                                if ui.small_button(crate::t!("inc-retry-1")).clicked() {
                                     app.action_set_external_task_retries(et.clone(), 1);
                                 }
-                                if ui.small_button("Error details").clicked() {
-                                    self.load_trace(app, format!("External task {} error details", crate::util::short_uuid(&et)), TraceSource::ExternalTask(et.clone()));
+                                if ui.small_button(crate::t!("inc-error-details")).clicked() {
+                                    self.load_trace(app, crate::t!("trace-external-title", id = crate::util::short_uuid(&et)), TraceSource::ExternalTask(et.clone()));
                                 }
                             }
                             _ => {}
                         }
                         let iid = inc.id.clone();
-                        if ui.small_button("Annotate…").clicked() {
+                        if ui.small_button(crate::t!("inc-annotate")).clicked() {
                             self.trace = Some(TraceView { title: format!("annotate:{iid}"), text: inc.annotation.clone().unwrap_or_default(), filter: String::new() });
                         }
-                        if ui.small_button("Resolve").on_hover_text("Delete the incident (does not fix the cause)").clicked() {
+                        if ui.small_button(crate::t!("inc-resolve")).on_hover_text(crate::t!("inc-resolve-tip")).clicked() {
                             let iid2 = iid.clone();
-                            app.confirm = Some(Confirm::new("Resolve incident", "Mark this incident as resolved? The underlying job or task is left untouched.", "Resolve", move |app: &mut App| {
+                            app.confirm = Some(Confirm::new(crate::t!("inc-resolve-title"), crate::t!("inc-resolve-body"), crate::t!("inc-resolve"), move |app: &mut App| {
                                 let i3 = iid2.clone();
-                                app.run_action(move |c| async move { c.resolve_incident(&i3).await }, "Incident resolved", "Could not resolve incident");
+                                app.run_action(move |c| async move { c.resolve_incident(&i3).await }, crate::t!("toast-incident-resolved"), crate::t!("toast-incident-resolve-failed"));
                             }));
                         }
                     });
@@ -1297,15 +1297,15 @@ impl InstancePlace {
             if let Some(iid) = t.title.strip_prefix("annotate:").map(String::from) {
                 let mut done = false;
                 egui::Frame::new().fill(tokens.bg2).stroke(egui::Stroke::new(1.0, tokens.accent)).corner_radius(6.0).inner_margin(8.0).show(ui, |ui| {
-                    ui.label(RichText::new("Incident annotation").strong());
+                    ui.label(RichText::new(crate::t!("inc-annotation-title")).strong());
                     ui.add(egui::TextEdit::multiline(&mut t.text).desired_rows(3).desired_width(f32::INFINITY));
                     ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() {
+                        if ui.button(crate::t!("common-save")).clicked() {
                             let a = t.text.clone();
-                            app.run_action(move |c| async move { c.set_incident_annotation(&iid, &a).await }, "Annotation saved", "Could not save annotation");
+                            app.run_action(move |c| async move { c.set_incident_annotation(&iid, &a).await }, crate::t!("toast-annotation-saved"), crate::t!("toast-annotation-failed"));
                             done = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.button(crate::t!("common-cancel")).clicked() {
                             done = true;
                         }
                     });
@@ -1319,7 +1319,7 @@ impl InstancePlace {
 
     fn load_trace(&mut self, app: &mut App, title: String, src: TraceSource) {
         let Some(net) = &app.net else { return };
-        self.trace = Some(TraceView { title: title.clone(), text: "loading…".into(), filter: String::new() });
+        self.trace = Some(TraceView { title: title.clone(), text: crate::t!("common-loading"), filter: String::new() });
         let id = self.id.clone();
         net.run(
             move |c| async move {
@@ -1331,7 +1331,7 @@ impl InstancePlace {
             move |app, r| {
                 let text = match r {
                     Ok(t) => t,
-                    Err(e) => format!("Could not load: {e}"),
+                    Err(e) => crate::t!("trace-load-failed", error = e.to_string()),
                 };
                 for tab in &mut app.tabs {
                     for p in &mut tab.history {
@@ -1357,14 +1357,14 @@ impl InstancePlace {
         loader_status_inline(ui, &self.jobs, &tokens);
         let Some(jobs) = self.jobs.data.clone() else {
             if self.finished() {
-                crate::widgets::empty_state(ui, "Finished instance — no jobs.");
+                crate::widgets::empty_state(ui, &crate::t!("jobs-finished"));
             } else {
                 ui.spinner();
             }
             return;
         };
         if jobs.is_empty() {
-            crate::widgets::empty_state(ui, "No jobs (timers or async continuations).");
+            crate::widgets::empty_state(ui, &crate::t!("jobs-empty"));
             return;
         }
         let defs = self.job_defs.data.clone().unwrap_or_default();
@@ -1384,7 +1384,7 @@ impl InstancePlace {
                         }
                     }
                     if j.suspended {
-                        pill(ui, "suspended", tokens.suspended);
+                        pill(ui, &crate::t!("state-suspended"), tokens.suspended);
                     }
                 });
                 kv_mono(ui, "job id", &j.id);
@@ -1403,33 +1403,33 @@ impl InstancePlace {
                 }
                 ui.horizontal_wrapped(|ui| {
                     let id = j.id.clone();
-                    if ui.small_button("Execute now").on_hover_text("Run the job synchronously").clicked() {
+                    if ui.small_button(crate::t!("job-execute")).on_hover_text(crate::t!("job-execute-tip")).clicked() {
                         let i2 = id.clone();
-                        app.run_action(move |c| async move { c.execute_job(&i2).await }, "Job executed", "Job execution failed");
+                        app.run_action(move |c| async move { c.execute_job(&i2).await }, crate::t!("toast-job-executed"), crate::t!("toast-job-execute-failed"));
                     }
-                    if ui.small_button("Retries → 1").clicked() {
+                    if ui.small_button(crate::t!("job-retries-1")).clicked() {
                         app.action_set_job_retries(id.clone(), 1);
                     }
-                    if ui.small_button("Retries → 3").clicked() {
+                    if ui.small_button(crate::t!("job-retries-3")).clicked() {
                         app.action_set_job_retries(id.clone(), 3);
                     }
-                    if ui.small_button("Due now").clicked() {
+                    if ui.small_button(crate::t!("job-due-now")).clicked() {
                         let i2 = id.clone();
                         let now = crate::util::format_camunda(chrono::Local::now());
-                        app.run_action(move |c| async move { c.set_job_duedate(&i2, Some(&now)).await }, "Due date set to now", "Could not set due date");
+                        app.run_action(move |c| async move { c.set_job_duedate(&i2, Some(&now)).await }, crate::t!("toast-due-now"), crate::t!("toast-due-failed"));
                     }
-                    if ui.small_button("Due +1 h").clicked() {
+                    if ui.small_button(crate::t!("job-due-plus-hour")).clicked() {
                         let i2 = id.clone();
                         let t = crate::util::format_camunda(chrono::Local::now() + chrono::Duration::hours(1));
-                        app.run_action(move |c| async move { c.set_job_duedate(&i2, Some(&t)).await }, "Due date moved by one hour", "Could not set due date");
+                        app.run_action(move |c| async move { c.set_job_duedate(&i2, Some(&t)).await }, crate::t!("toast-due-plus-hour"), crate::t!("toast-due-failed"));
                     }
-                    if ui.small_button(if j.suspended { "Activate" } else { "Suspend" }).clicked() {
+                    if ui.small_button(if j.suspended { crate::t!("common-activate") } else { crate::t!("common-suspend") }).clicked() {
                         let i2 = id.clone();
                         let s = !j.suspended;
-                        app.run_action(move |c| async move { c.suspend_job(&i2, s).await }, "Job suspension changed", "Could not change job");
+                        app.run_action(move |c| async move { c.suspend_job(&i2, s).await }, crate::t!("toast-job-suspension"), crate::t!("toast-job-change-failed"));
                     }
-                    if j.exception_message.is_some() && ui.small_button("Stack trace").clicked() {
-                        self.load_trace(app, format!("Job {} stack trace", crate::util::short_uuid(&id)), TraceSource::Job(id.clone()));
+                    if j.exception_message.is_some() && ui.small_button(crate::t!("inc-stack-trace")).clicked() {
+                        self.load_trace(app, crate::t!("trace-job-title", id = crate::util::short_uuid(&id)), TraceSource::Job(id.clone()));
                     }
                 });
             });
@@ -1444,14 +1444,14 @@ impl InstancePlace {
         loader_status_inline(ui, &self.external_tasks, &tokens);
         let Some(list) = self.external_tasks.data.clone() else {
             if self.finished() {
-                crate::widgets::empty_state(ui, "Finished instance — no external tasks.");
+                crate::widgets::empty_state(ui, &crate::t!("ext-finished"));
             } else {
                 ui.spinner();
             }
             return;
         };
         if list.is_empty() {
-            crate::widgets::empty_state(ui, "No external tasks.");
+            crate::widgets::empty_state(ui, &crate::t!("ext-empty"));
             return;
         }
         for e in &list {
@@ -1469,31 +1469,31 @@ impl InstancePlace {
                     }
                 });
                 kv_mono(ui, "task id", &e.id);
-                kv(ui, "worker", e.worker_id.as_deref().unwrap_or("— (not locked)"));
+                kv(ui, "worker", &e.worker_id.clone().unwrap_or_else(|| crate::t!("ext-not-locked")));
                 if let Some(l) = &e.lock_expiration_time {
                     kv(ui, "lock expires", &format!("{} ({})", crate::util::fmt_local(l), crate::util::fmt_relative(l)));
                 }
-                kv(ui, "retries", &e.retries.map(|r| r.to_string()).unwrap_or_else(|| "— (never failed)".into()));
+                kv(ui, "retries", &e.retries.map(|r| r.to_string()).unwrap_or_else(|| crate::t!("ext-never-failed")));
                 kv(ui, "priority", &e.priority.to_string());
                 if let Some(m) = &e.error_message {
                     kv(ui, "error", m);
                 }
                 ui.horizontal_wrapped(|ui| {
                     let id = e.id.clone();
-                    if ui.small_button("Retries → 1").clicked() {
+                    if ui.small_button(crate::t!("job-retries-1")).clicked() {
                         app.action_set_external_task_retries(id.clone(), 1);
                     }
-                    if e.worker_id.is_some() && ui.small_button("Unlock").clicked() {
+                    if e.worker_id.is_some() && ui.small_button(crate::t!("ext-unlock")).clicked() {
                         let i2 = id.clone();
-                        app.run_action(move |c| async move { c.unlock_external_task(&i2).await }, "External task unlocked", "Could not unlock");
+                        app.run_action(move |c| async move { c.unlock_external_task(&i2).await }, crate::t!("toast-ext-unlocked"), crate::t!("toast-ext-unlock-failed"));
                     }
-                    if ui.small_button("Priority +10").clicked() {
+                    if ui.small_button(crate::t!("ext-priority-plus")).clicked() {
                         let i2 = id.clone();
                         let p = e.priority + 10;
-                        app.run_action(move |c| async move { c.set_external_task_priority(&i2, p).await }, "Priority raised", "Could not set priority");
+                        app.run_action(move |c| async move { c.set_external_task_priority(&i2, p).await }, crate::t!("toast-priority-raised"), crate::t!("toast-priority-failed"));
                     }
-                    if e.error_message.is_some() && ui.small_button("Error details").clicked() {
-                        self.load_trace(app, format!("External task {} error details", crate::util::short_uuid(&id)), TraceSource::ExternalTask(id.clone()));
+                    if e.error_message.is_some() && ui.small_button(crate::t!("inc-error-details")).clicked() {
+                        self.load_trace(app, crate::t!("trace-external-title", id = crate::util::short_uuid(&id)), TraceSource::ExternalTask(id.clone()));
                     }
                 });
             });
@@ -1523,13 +1523,13 @@ impl InstancePlace {
             return;
         };
         if list.is_empty() {
-            crate::widgets::empty_state(ui, "No called process instances.");
+            crate::widgets::empty_state(ui, &crate::t!("called-empty"));
             return;
         }
         let acts = self.history_acts.data.clone().unwrap_or_default();
         egui::Grid::new("called-grid").num_columns(4).striped(true).spacing([10.0, 4.0]).show(ui, |ui| {
             for t in ["Definition", "Business key / id", "Via", "State"] {
-                ui.label(RichText::new(t).strong().size(11.5));
+                ui.label(RichText::new(crate::i18n::col(t)).strong().size(11.5));
             }
             ui.end_row();
             for c in &list {
@@ -1558,7 +1558,7 @@ impl InstancePlace {
         let mut rows: Vec<&HistoricActivityInstance> = acts.iter().filter(|a| !a.is_multi_instance_body()).collect();
         rows.sort_by(|a, b| a.start_time.cmp(&b.start_time));
         if rows.is_empty() {
-            crate::widgets::empty_state(ui, "No activity history yet.");
+            crate::widgets::empty_state(ui, &crate::t!("timeline-empty"));
             return;
         }
         let ts = |s: &Option<String>| s.as_deref().and_then(crate::util::parse_time).map(|t| t.timestamp_millis());
@@ -1633,20 +1633,20 @@ impl InstancePlace {
             crate::widgets::tooltip_at_pointer(ui, egui::Id::unique(("tl-tip", &a.id)), |ui| {
                 ui.label(RichText::new(a.activity_name.clone().unwrap_or(a.activity_id.clone())).strong());
                 ui.label(format!("{}  ·  {}", a.activity_type.clone().unwrap_or_default(), a.base_activity_id()));
-                ui.label(format!("start {}", a.start_time.as_deref().map(crate::util::fmt_local).unwrap_or_default()));
+                ui.label(crate::t!("timeline-start", when = a.start_time.as_deref().map(crate::util::fmt_local).unwrap_or_default()));
                 if let Some(e) = &a.end_time {
-                    ui.label(format!("end   {}  ({})", crate::util::fmt_local(e), a.duration_in_millis.map(crate::util::human_millis).unwrap_or_default()));
+                    ui.label(crate::t!("timeline-end", when = crate::util::fmt_local(e), duration = a.duration_in_millis.map(crate::util::human_millis).unwrap_or_default()));
                 } else {
-                    ui.label("still active");
+                    ui.label(crate::t!("timeline-active"));
                 }
                 if a.canceled {
-                    ui.label(RichText::new("cancelled").color(tokens.incident));
+                    ui.label(RichText::new(crate::t!("timeline-cancelled")).color(tokens.incident));
                 }
                 if let Some(u) = &a.assignee {
-                    ui.label(format!("assignee {u}"));
+                    ui.label(crate::t!("timeline-assignee", user = u.clone()));
                 }
                 if let Some(c) = &a.called_process_instance_id {
-                    ui.label(format!("called instance {}", crate::util::short_uuid(c)));
+                    ui.label(crate::t!("timeline-called", id = crate::util::short_uuid(c)));
                 }
             });
             if resp.clicked() {
@@ -1664,26 +1664,26 @@ impl InstancePlace {
         match a {
             ModAction::StartBefore(id) => {
                 self.modification.instructions.push(ModificationInstruction::start_before(&id));
-                app.toasts.push(ToastKind::Info, format!("Added: start before {}", name(&id)));
+                app.toasts.push(ToastKind::Info, crate::t!("mod-added-start-before", name = name(&id)));
             }
             ModAction::StartAfter(id) => {
                 self.modification.instructions.push(ModificationInstruction::start_after(&id));
-                app.toasts.push(ToastKind::Info, format!("Added: start after {}", name(&id)));
+                app.toasts.push(ToastKind::Info, crate::t!("mod-added-start-after", name = name(&id)));
             }
             ModAction::Cancel(id) => {
                 self.modification.instructions.push(ModificationInstruction::cancel_activity(&id));
-                app.toasts.push(ToastKind::Info, format!("Added: cancel tokens at {}", name(&id)));
+                app.toasts.push(ToastKind::Info, crate::t!("mod-added-cancel", name = name(&id)));
             }
             ModAction::MoveFrom(id) => {
                 self.modification.move_from = Some(id.clone());
-                self.view.pick = Some(PickMode::Target { label: format!("Move token from {}", name(&id)) });
+                self.view.pick = Some(PickMode::Target { label: crate::t!("mod-move-label", name = name(&id)) });
             }
             ModAction::Picked(target) => {
                 self.view.pick = None;
                 if let Some(from) = self.modification.move_from.take() {
                     self.modification.instructions.push(ModificationInstruction::cancel_activity(&from));
                     self.modification.instructions.push(ModificationInstruction::start_before(&target));
-                    app.toasts.push(ToastKind::Info, format!("Added: move token {} → {}", name(&from), name(&target)));
+                    app.toasts.push(ToastKind::Info, crate::t!("mod-added-move", from = name(&from), to = name(&target)));
                 } else {
                     self.modification.instructions.push(ModificationInstruction::start_before(&target));
                 }
@@ -1697,15 +1697,15 @@ impl InstancePlace {
         let tokens = app.tokens.clone();
         let finished = self.finished();
         if finished {
-            ui.label(RichText::new("Restart this finished instance").strong());
-            ui.label(RichText::new("Pick where the new instance should start: right-click an element on the diagram → “Start token before/after”. Variables from the end of this instance are copied when “initial variables” is off.").weak().small());
+            ui.label(RichText::new(crate::t!("mod-restart-title")).strong());
+            ui.label(RichText::new(crate::t!("mod-restart-help")).weak().small());
         } else {
-            ui.label(RichText::new("Token modification").strong());
-            ui.label(RichText::new("Right-click an element on the diagram: start a token before/after it, cancel tokens there, or move a token. Nothing is sent until you apply.").weak().small());
+            ui.label(RichText::new(crate::t!("mod-title")).strong());
+            ui.label(RichText::new(crate::t!("mod-help")).weak().small());
         }
         ui.add_space(6.0);
         if self.modification.instructions.is_empty() {
-            crate::widgets::empty_state(ui, "No instructions yet.");
+            crate::widgets::empty_state(ui, &crate::t!("mod-empty"));
         }
         let mut remove: Option<usize> = None;
         let mut swap: Option<(usize, usize)> = None;
@@ -1746,16 +1746,16 @@ impl InstancePlace {
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.modification.skip_listeners, "Skip custom listeners");
-            ui.checkbox(&mut self.modification.skip_io, "Skip I/O mappings");
+            ui.checkbox(&mut self.modification.skip_listeners, crate::t!("mod-skip-listeners"));
+            ui.checkbox(&mut self.modification.skip_io, crate::t!("mod-skip-io"));
         });
         if !finished {
-            ui.add(egui::TextEdit::singleline(&mut self.modification.annotation).hint_text("annotation (optional, stored in the operation log)").desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::singleline(&mut self.modification.annotation).hint_text(crate::t!("mod-annotation-hint")).desired_width(f32::INFINITY));
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             let ok = !self.modification.instructions.is_empty();
-            let label = if finished { "Restart instance…" } else { "Apply modification…" };
+            let label = if finished { crate::t!("mod-restart-button") } else { crate::t!("mod-apply-button") };
             if ui.add_enabled(ok, egui::Button::new(RichText::new(label).color(egui::Color32::WHITE)).fill(tokens.accent)).clicked() {
                 let instructions = self.modification.instructions.clone();
                 let desc: Vec<String> = instructions.iter().map(|i| format!("• {}", i.describe())).collect();
@@ -1765,24 +1765,24 @@ impl InstancePlace {
                 let ann = self.modification.annotation.clone();
                 let def_id = self.definition_id().unwrap_or_default();
                 let body = if finished {
-                    format!("Start a new instance of this process with:\n{}\n\nVariables are copied from the finished instance.", desc.join("\n"))
+                    crate::t!("mod-restart-body", list = desc.join("\n"))
                 } else {
-                    format!("Apply to instance {}:\n{}", crate::util::short_uuid(&id), desc.join("\n"))
+                    crate::t!("mod-apply-body", id = crate::util::short_uuid(&id), list = desc.join("\n"))
                 };
-                app.confirm = Some(Confirm::new(if finished { "Restart instance" } else { "Modify tokens" }, body, if finished { "Restart" } else { "Apply" }, move |app: &mut App| {
+                app.confirm = Some(Confirm::new(if finished { crate::t!("mod-restart-confirm-title") } else { crate::t!("mod-confirm-title") }, body, if finished { crate::t!("common-restart") } else { crate::t!("common-apply") }, move |app: &mut App| {
                     if finished {
                         let req = RestartRequest { process_instance_ids: vec![id.clone()], instructions: instructions.clone(), initial_variables: Some(false), skip_custom_listeners: Some(skip_l), skip_io_mappings: Some(skip_io), without_business_key: Some(false) };
                         let d = def_id.clone();
-                        app.run_action(move |c| async move { c.restart_instances(&d, &req, false).await }, "Instance restarted (see the definition's instance list)", "Restart failed");
+                        app.run_action(move |c| async move { c.restart_instances(&d, &req, false).await }, crate::t!("toast-restarted"), crate::t!("toast-restart-failed"));
                     } else {
                         let req = ModificationRequest { instructions: instructions.clone(), skip_custom_listeners: Some(skip_l), skip_io_mappings: Some(skip_io), annotation: if ann.trim().is_empty() { None } else { Some(ann.clone()) } };
                         let i2 = id.clone();
-                        app.run_action(move |c| async move { c.modify_instance(&i2, &req, false).await }, "Modification applied", "Modification failed");
+                        app.run_action(move |c| async move { c.modify_instance(&i2, &req, false).await }, crate::t!("toast-modified"), crate::t!("toast-modify-failed"));
                     }
                 }));
                 self.modification.instructions.clear();
             }
-            if ui.button("Clear").clicked() {
+            if ui.button(crate::t!("common-clear")).clicked() {
                 self.modification.instructions.clear();
                 self.modification.move_from = None;
                 self.view.pick = None;
@@ -1839,24 +1839,24 @@ fn build_value(type_: &str, text: &str) -> Result<VariableValue, String> {
     let t = text.trim();
     Ok(match type_ {
         "String" => VariableValue::new("String", serde_json::Value::String(text.to_string())),
-        "Integer" | "Long" | "Short" => VariableValue::new(type_, serde_json::Value::Number(t.parse::<i64>().map_err(|e| format!("not an integer: {e}"))?.into())),
+        "Integer" | "Long" | "Short" => VariableValue::new(type_, serde_json::Value::Number(t.parse::<i64>().map_err(|e| crate::t!("vars-err-integer", error = e.to_string()))?.into())),
         "Double" => VariableValue::new("Double", serde_json::json!(t.parse::<f64>().map_err(|e| format!("not a number: {e}"))?)),
         "Boolean" => VariableValue::new("Boolean", serde_json::Value::Bool(match t {
             "true" | "1" | "yes" => true,
             "false" | "0" | "no" => false,
-            _ => return Err("use true or false".into()),
+            _ => return Err(crate::t!("vars-err-boolean")),
         })),
         "Date" => {
-            let d = crate::query::date_value(t).ok_or("unrecognised date")?;
+            let d = crate::query::date_value(t).ok_or_else(|| crate::t!("vars-err-date"))?;
             VariableValue::new("Date", serde_json::Value::String(d))
         }
         "Json" => {
-            let j: serde_json::Value = serde_json::from_str(t).map_err(|e| format!("invalid JSON: {e}"))?;
+            let j: serde_json::Value = serde_json::from_str(t).map_err(|e| crate::t!("vars-err-json", error = e.to_string()))?;
             VariableValue::new("Json", serde_json::Value::String(serde_json::to_string(&j).unwrap()))
         }
         "Xml" => VariableValue::new("Xml", serde_json::Value::String(text.to_string())),
         "Object" => {
-            let j: serde_json::Value = serde_json::from_str(t).map_err(|e| format!("invalid JSON: {e}"))?;
+            let j: serde_json::Value = serde_json::from_str(t).map_err(|e| crate::t!("vars-err-json", error = e.to_string()))?;
             let mut v = VariableValue::new("Object", serde_json::Value::String(serde_json::to_string(&j).unwrap()));
             v.value_info = serde_json::json!({"serializationDataFormat": "application/json", "objectTypeName": "java.util.LinkedHashMap"});
             v

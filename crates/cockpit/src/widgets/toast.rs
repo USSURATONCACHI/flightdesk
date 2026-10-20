@@ -17,7 +17,7 @@ pub struct Toast {
     pub ttl: Option<f32>,
     pub undo: Option<super::AppAction>,
     /// Label of the action button ("Undo" for undo handlers, e.g. "Fix" for repairs).
-    pub action_label: &'static str,
+    pub action_label: String,
     pub id: u64,
     pub hovered: bool,
     pub expanded: bool,
@@ -41,16 +41,20 @@ impl Toasts {
         self.push_full(ToastKind::Error, text, details, None)
     }
     pub fn push_full(&mut self, kind: ToastKind, text: impl Into<String>, details: Option<String>, undo: Option<super::AppAction>) -> u64 {
-        self.push_with_action(kind, text, details, "Undo", undo)
+        self.push_action_inner(kind, text, details, crate::t!("common-undo"), undo, true)
     }
 
     /// A toast with a custom action button; actions keep the toast until clicked or dismissed.
-    pub fn push_with_action(&mut self, kind: ToastKind, text: impl Into<String>, details: Option<String>, action_label: &'static str, action: Option<super::AppAction>) -> u64 {
+    pub fn push_with_action(&mut self, kind: ToastKind, text: impl Into<String>, details: Option<String>, action_label: impl Into<String>, action: Option<super::AppAction>) -> u64 {
+        self.push_action_inner(kind, text, details, action_label.into(), action, false)
+    }
+
+    fn push_action_inner(&mut self, kind: ToastKind, text: impl Into<String>, details: Option<String>, action_label: String, action: Option<super::AppAction>, is_undo: bool) -> u64 {
         let undo = action;
         self.next_id += 1;
         let ttl = match kind {
             ToastKind::Error => None,
-            ToastKind::Warning => if action_label == "Undo" { Some(10.0) } else { None },
+            ToastKind::Warning => if is_undo { Some(10.0) } else { None },
             _ => Some(if undo.is_some() { 8.0 } else { 4.5 }),
         };
         self.items.push(Toast { kind, text: text.into(), details, created: Instant::now(), ttl, undo, action_label, id: self.next_id, hovered: false, expanded: false });
@@ -95,17 +99,17 @@ impl Toasts {
                                     }
                                 }
                                 ui.horizontal(|ui| {
-                                    if t.undo.is_some() && ui.small_button(t.action_label).clicked() {
+                                    if t.undo.is_some() && ui.small_button(t.action_label.clone()).clicked() {
                                         if let Some(u) = t.undo.take() {
                                             actions.push(ToastAction::Undo(u));
                                         }
                                         remove.push(t.id);
                                     }
                                     if t.details.is_some() {
-                                        if ui.small_button(if t.expanded { "Hide details" } else { "Details" }).clicked() {
+                                        if ui.small_button(if t.expanded { crate::t!("toast-hide-details") } else { crate::t!("common-details") }).clicked() {
                                             t.expanded = !t.expanded;
                                         }
-                                        if ui.small_button("Copy").clicked() {
+                                        if ui.small_button(crate::t!("common-copy")).clicked() {
                                             let text = format!("{}\n{}", t.text, t.details.clone().unwrap_or_default());
                                             ui.ctx().copy_text(text);
                                         }

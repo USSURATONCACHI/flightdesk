@@ -52,6 +52,8 @@ pub struct Settings {
     pub last_engine: usize,
     pub auto_connect: bool,
     pub theme: ThemeMode,
+    /// `system` or a language tag such as `ru-RU` (one of the discovered packs).
+    pub language: String,
     /// 0.9 compact, 1.0 normal, 1.15 comfortable
     pub density: f32,
     pub wheel_zooms: bool,
@@ -88,6 +90,7 @@ impl Default for Settings {
             last_engine: 0,
             auto_connect: false,
             theme: ThemeMode::System,
+            language: crate::i18n::SYSTEM.to_string(),
             density: 1.0,
             wheel_zooms: true,
             inertia: true,

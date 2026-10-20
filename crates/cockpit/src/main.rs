@@ -22,6 +22,7 @@ struct Args {
     no_focus: bool,
     config_dir: Option<PathBuf>,
     data_dir: Option<PathBuf>,
+    locale_dirs: Vec<PathBuf>,
     mcp: bool,
     mcp_port: Option<u16>,
     mcp_stdio: Option<String>,
@@ -47,6 +48,7 @@ fn parse_args() -> Args {
             "--no-focus" => a.no_focus = true,
             "--config-dir" => a.config_dir = it.next().map(|v| paths::expand_tilde(&v)),
             "--data-dir" => a.data_dir = it.next().map(|v| paths::expand_tilde(&v)),
+            "--locale-dir" => a.locale_dirs.extend(it.next().map(|v| paths::split_dir_list(&v)).unwrap_or_default()),
             "--mcp" => a.mcp = true,
             "--mcp-port" => a.mcp_port = it.next().and_then(|v| v.parse().ok()),
             "--mcp-stdio" => a.mcp_stdio = Some(it.next().unwrap_or_else(|| "http://127.0.0.1:7788/mcp".into())),
@@ -57,7 +59,7 @@ fn parse_args() -> Args {
                 })
             }
             "-h" | "--help" => {
-                println!("flightdeck [--config-dir DIR --data-dir DIR] [--mcp] [--mcp-port N] [--mcp-stdio URL] [--no-focus] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
+                println!("flightdeck [--config-dir DIR --data-dir DIR] [--locale-dir DIR[:DIR…]] [--mcp] [--mcp-port N] [--mcp-stdio URL] [--no-focus] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
                 std::process::exit(0);
             }
             other => {
@@ -113,6 +115,14 @@ fn main() -> eframe::Result<()> {
     };
     init_logging(&dirs);
     install_crash_log(Some(dirs.crash_log()));
+    // Language packs: --locale-dir / FLIGHTDECK_LOCALE_DIR replace the default search path.
+    let locale_dirs = if !args.locale_dirs.is_empty() {
+        args.locale_dirs.clone()
+    } else if let Some(list) = std::env::var(paths::ENV_LOCALE_DIR).ok().filter(|v| !v.trim().is_empty()) {
+        paths::split_dir_list(&list)
+    } else {
+        paths::default_locale_dirs(&dirs, std::env::var("XDG_DATA_DIRS").ok().as_deref(), std::env::current_exe().ok().as_deref())
+    };
     if let Some(url) = &args.mcp_stdio {
         // stdio ↔ HTTP bridge for MCP clients that only speak stdio.
         mcp::stdio_bridge(url);
@@ -155,6 +165,8 @@ fn main() -> eframe::Result<()> {
             cockpit::platform::init(cc, cc);
             let mut app = app::App::new(&cc.egui_ctx, settings, args.scale);
             app.settings_path = Some(dirs.settings_file());
+            app.locale_dirs = locale_dirs.clone();
+            app.apply_language();
             if theme_override.is_some() {
                 app.theme_override = theme_override;
                 app.frame_theme_dirty = true;

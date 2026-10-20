@@ -39,7 +39,7 @@ impl BatchesPlace {
                 progress_line(ui, egui::Rect::from_min_size(top.min - egui::Vec2::new(16.0, 16.0), egui::Vec2::new(top.width() + 32.0, 2.0)), tokens.accent);
             }
             ui.horizontal(|ui| {
-                heading_row(ui, "Batches", None);
+                heading_row(ui, &crate::t!("place-batches"), None);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     app.refresh_controls(ui, self.running.age(), self.running.is_loading());
                 });
@@ -47,9 +47,9 @@ impl BatchesPlace {
             loader_status_inline(ui, &self.running, &tokens);
             ui.add_space(8.0);
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                ui.label(RichText::new("Running").strong());
+                ui.label(RichText::new(crate::t!("batches-running")).strong());
                 match &self.running.data {
-                    Some(list) if list.is_empty() => crate::widgets::empty_state(ui, "No running batches."),
+                    Some(list) if list.is_empty() => crate::widgets::empty_state(ui, &crate::t!("batches-empty-running")),
                     Some(list) => {
                         for b in list.clone() {
                             egui::Frame::new().fill(tokens.bg2).stroke(egui::Stroke::new(1.0, tokens.bg3)).corner_radius(6.0).inner_margin(10.0).show(ui, |ui| {
@@ -58,22 +58,22 @@ impl BatchesPlace {
                                     pill(ui, b.type_.as_deref().unwrap_or("batch"), tokens.accent);
                                     ui.label(RichText::new(crate::util::short_uuid(&b.id)).monospace()).on_hover_text(&b.id);
                                     if b.suspended {
-                                        pill(ui, "suspended", tokens.suspended);
+                                        pill(ui, &crate::t!("state-suspended"), tokens.suspended);
                                     }
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         let id = b.id.clone();
-                                        if ui.button(RichText::new("Delete").color(tokens.incident)).clicked() {
-                                            app.confirm = Some(Confirm::new("Delete batch", "Delete this batch and its remaining jobs? Already executed jobs are not undone.", "Delete", move |app: &mut App| {
+                                        if ui.button(RichText::new(crate::t!("common-delete")).color(tokens.incident)).clicked() {
+                                            app.confirm = Some(Confirm::new(crate::t!("batch-delete-title"), crate::t!("batch-delete-body"), crate::t!("common-delete"), move |app: &mut App| {
                                                 let i2 = id.clone();
-                                                app.run_action(move |c| async move { c.delete_batch(&i2, true).await }, "Batch deleted", "Could not delete batch");
+                                                app.run_action(move |c| async move { c.delete_batch(&i2, true).await }, crate::t!("toast-batch-deleted"), crate::t!("toast-batch-delete-failed"));
                                             }));
                                         }
                                         let id = b.id.clone();
                                         let s = !b.suspended;
-                                        if ui.button(if b.suspended { "Resume" } else { "Suspend" }).clicked() {
-                                            app.run_action(move |c| async move { c.suspend_batch(&id, s).await }, "Batch updated", "Could not update batch");
+                                        if ui.button(if b.suspended { crate::t!("common-resume") } else { crate::t!("common-suspend") }).clicked() {
+                                            app.run_action(move |c| async move { c.suspend_batch(&id, s).await }, crate::t!("toast-batch-updated"), crate::t!("toast-batch-update-failed"));
                                         }
-                                        ui.label(RichText::new(format!("started {}", b.start_time.as_deref().map(crate::util::fmt_relative).unwrap_or_default())).weak().small());
+                                        ui.label(RichText::new(crate::t!("started-when", when = b.start_time.as_deref().map(crate::util::fmt_relative).unwrap_or_default())).weak().small());
                                     });
                                 });
                                 let total = b.total_jobs.max(1) as f32;
@@ -85,7 +85,7 @@ impl BatchesPlace {
                                 ui.painter().rect_filled(egui::Rect::from_min_size(rect.min, egui::Vec2::new(rect.width() * frac, 10.0)), 5.0, if failed > 0 { tokens.suspended } else { tokens.completed });
                                 ui.label(RichText::new(format!("{} of {} jobs done · {} remaining · {} failed · {} invocations per job", done as i64, b.total_jobs, b.remaining_jobs.unwrap_or(0), failed, b.invocations_per_batch_job)).small());
                                 if let Some(u) = &b.create_user_id {
-                                    ui.label(RichText::new(format!("created by {u}")).weak().small());
+                                    ui.label(RichText::new(crate::t!("created-by", user = u.clone())).weak().small());
                                 }
                             });
                             ui.add_space(4.0);
@@ -96,15 +96,15 @@ impl BatchesPlace {
                     }
                 }
                 ui.add_space(12.0);
-                ui.label(RichText::new("Finished (history)").strong());
+                ui.label(RichText::new(crate::t!("batches-finished")).strong());
                 if let Some(list) = &self.history.data {
                     let finished: Vec<&Batch> = list.iter().filter(|b| b.end_time.is_some()).collect();
                     if finished.is_empty() {
-                        crate::widgets::empty_state(ui, "No finished batches.");
+                        crate::widgets::empty_state(ui, &crate::t!("batches-empty-finished"));
                     }
                     egui::Grid::new("hist-batches").num_columns(5).striped(true).spacing([12.0, 4.0]).show(ui, |ui| {
                         for t in ["Type", "Id", "Jobs", "Started", "Ended"] {
-                            ui.label(RichText::new(t).strong().size(11.5));
+                            ui.label(RichText::new(crate::i18n::col(t)).strong().size(11.5));
                         }
                         ui.end_row();
                         for b in finished {

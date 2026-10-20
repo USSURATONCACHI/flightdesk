@@ -96,6 +96,18 @@ at start-up. Without them the platform defaults are used (`~/.config/flightdeck`
 `~/.local/share/flightdeck` on Linux). Development runs (`scripts/shot.sh`) always use a
 scratch pair so they never touch your real configuration.
 
+### Languages
+
+The interface ships in English, Russian and German as Fluent language packs
+(`locales/<tag>.ftl`, e.g. `ru-RU.ftl`). They are not compiled in: the app searches, in order,
+`<config dir>/locales`, `<data dir>/locales`, every `$XDG_DATA_DIRS/flightdeck/locales` (the
+package installs there) and the directory next to the executable (`cargo run` finds the repo's
+`locales/`). `--locale-dir DIR[:DIR…]` or `FLIGHTDECK_LOCALE_DIR` replace that search path.
+*Settings → Appearance → Language* offers “System” (the OS language, matched by full tag, then
+by language, falling back to English) and every pack found. To add a language, copy
+`en-US.ftl` to `<tag>.ftl` in your config directory's `locales/` folder, set `language-name`,
+and translate; untranslated messages fall back to English.
+
 Logs go to stdout (`flightdeck > flightdeck.log 2>&1` to keep them); panics are appended to
 `<config dir>/crash.log`. `RUST_LOG=debug` raises the level.
 

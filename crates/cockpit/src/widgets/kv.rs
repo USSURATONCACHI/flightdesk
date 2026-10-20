@@ -4,6 +4,7 @@ use egui::{Color32, CornerRadius, RichText, Ui, Vec2};
 
 /// Collapsible section with remembered open state.
 pub fn section<R>(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, title: &str, default_open: bool, content: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    let title = crate::i18n::section_title(title);
     let id = ui.make_persistent_id(id);
     let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, default_open);
     let header = ui.horizontal(|ui| {
@@ -37,6 +38,7 @@ pub fn kv_mono(ui: &mut Ui, key: &str, value: &str) -> egui::Response {
 }
 
 pub fn kv_opt(ui: &mut Ui, key: &str, value: &str, mono: bool) -> egui::Response {
+    let key = crate::i18n::kv_label(key);
     let resp = ui.horizontal_top(|ui| {
         ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(key).color(ui.visuals().weak_text_color()).size(12.0)).halign(egui::Align::Max).truncate());
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -52,12 +54,13 @@ pub fn kv_opt(ui: &mut Ui, key: &str, value: &str, mono: bool) -> egui::Response
 
 /// A row whose value is a link (clickable, accent coloured).
 pub fn kv_link(ui: &mut Ui, key: &str, value: &str) -> bool {
+    let key = crate::i18n::kv_label(key);
     let mut clicked = false;
     ui.horizontal(|ui| {
         ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(key).color(ui.visuals().weak_text_color()).size(12.0)).halign(egui::Align::Max).truncate());
         ui.spacing_mut().item_spacing.x = 4.0;
         crate::widgets::copy_button(ui, value);
-        if ui.link(RichText::new(value).monospace().size(12.0)).on_hover_text("Open").clicked() {
+        if ui.link(RichText::new(value).monospace().size(12.0)).on_hover_text(crate::t!("common-open")).clicked() {
             clicked = true;
         }
     });

@@ -84,13 +84,13 @@ impl Tab {
 impl Place {
     pub fn title(&self) -> String {
         match self {
-            Place::Definitions(_) => "Definitions".into(),
+            Place::Definitions(_) => crate::t!("place-definitions"),
             Place::Definition(p) => p.title(),
             Place::Instance(p) => p.title(),
             Place::Search(p) => p.title(),
-            Place::Incidents(_) => "Incidents".into(),
-            Place::Batches(_) => "Batches".into(),
-            Place::Settings(_) => "Settings".into(),
+            Place::Incidents(_) => crate::t!("place-incidents"),
+            Place::Batches(_) => crate::t!("place-batches"),
+            Place::Settings(_) => crate::t!("settings-title"),
             Place::File(p) => p.title(),
         }
     }

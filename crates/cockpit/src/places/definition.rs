@@ -248,7 +248,7 @@ impl DefinitionPlace {
         // ---- toolbar ----
         egui::Panel::top(("def-toolbar", &self.def_id)).frame(egui::Frame::new().fill(tokens.bg1).inner_margin(egui::Margin::symmetric(12, 6))).show(ui, |ui| {
             ui.horizontal(|ui| {
-                if ui.link(RichText::new("Definitions").weak()).clicked() {
+                if ui.link(RichText::new(crate::t!("place-definitions")).weak()).clicked() {
                     app.navigate(Nav::Definitions, NavMode::Here);
                 }
                 ui.label(RichText::new("›").weak());
@@ -269,15 +269,15 @@ impl DefinitionPlace {
                             }
                         });
                         if d.suspended {
-                            pill(ui, "suspended", tokens.suspended);
+                            pill(ui, &crate::t!("state-suspended"), tokens.suspended);
                         }
                         let running: i64 = self.stats.data.as_ref().map(|s| s.iter().map(|x| x.instances).sum()).unwrap_or(0);
                         let incidents: i64 = self.stats.data.as_ref().map(|s| s.iter().map(|x| x.incident_count()).sum()).unwrap_or(0);
-                        if badge(ui, &format!("{running} running"), tokens.running).on_hover_text("Show instances").clicked() {
+                        if badge(ui, &crate::t!("n-running", n = running), tokens.running).on_hover_text(crate::t!("definition-show-instances")).clicked() {
                             self.dock_tab = 1;
                             app.dock_visible = true;
                         }
-                        if incidents > 0 && badge(ui, &format!("{incidents} incidents"), tokens.incident).clicked() {
+                        if incidents > 0 && badge(ui, &crate::t!("n-incidents", n = incidents), tokens.incident).clicked() {
                             self.dock_tab = 2;
                             app.dock_visible = true;
                         }
@@ -291,11 +291,11 @@ impl DefinitionPlace {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     app.refresh_controls(ui, self.stats.age(), self.stats.is_loading());
-                    if ui.button("🔍 Find element").on_hover_text("Ctrl+F").clicked() {
+                    if ui.button(format!("🔍 {}", crate::t!("definition-find-element"))).on_hover_text("Ctrl+F").clicked() {
                         self.view.open_find();
                     }
                     if let Some(d) = &self.def.data {
-                        if ui.button("Search instances").on_hover_text("Open the instance search for this definition").clicked() {
+                        if ui.button(crate::t!("common-search-instances")).on_hover_text(crate::t!("definition-search-instances-tip")).clicked() {
                             app.navigate(Nav::Search { query: format!("def:{}", d.key) }, NavMode::NewTab);
                         }
                     }
@@ -309,9 +309,9 @@ impl DefinitionPlace {
                 progress_line(ui, egui::Rect::from_min_size(r.min, egui::Vec2::new(r.width(), 2.0)), tokens.accent);
                 ui.centered_and_justified(|ui| {
                     if let Some(e) = app.cache.diagram_error(&self.def_id) {
-                        ui.label(RichText::new(format!("Cannot load diagram: {e}")).color(tokens.incident));
+                        ui.label(RichText::new(crate::t!("diagram-load-failed", error = e.to_string())).color(tokens.incident));
                     } else {
-                        ui.label(RichText::new("Loading diagram…").weak());
+                        ui.label(RichText::new(crate::t!("diagram-loading")).weak());
                     }
                 });
             });
@@ -337,7 +337,7 @@ impl DefinitionPlace {
                     actions = inspector::show(ui, &model_dock, r, &facts, false);
                 }
                 None => {
-                    crate::widgets::empty_state(ui, "Select an element to inspect it.\nTab cycles elements · Ctrl+F finds · hold Alt to inspect on hover.");
+                    crate::widgets::empty_state(ui, &crate::t!("inspector-empty-definition"));
                     if let Some(d) = &self.def.data {
                         ui.add_space(16.0);
                         crate::widgets::section(ui, "def-meta", "Definition", true, |ui| {
@@ -351,7 +351,7 @@ impl DefinitionPlace {
                                 crate::widgets::kv_mono(ui, "deployment", dep);
                             }
                             if let Some(t) = d.history_time_to_live {
-                                crate::widgets::kv(ui, "history TTL", &format!("{t} days"));
+                                crate::widgets::kv(ui, "history TTL", &crate::t!("n-days", n = t));
                             }
                             if let Some(desc) = &d.description {
                                 crate::widgets::kv(ui, "description", desc);
@@ -406,7 +406,7 @@ impl DefinitionPlace {
             }
             app.last_diagram_viewport = out.viewport;
             if out.copied {
-                app.toasts.push(crate::widgets::ToastKind::Info, "Element id copied");
+                app.toasts.push(crate::widgets::ToastKind::Info, crate::t!("toast-element-id-copied"));
             }
             if let Some(bpmn::Ref::Element(i)) = out.enter_pressed {
                 let e = &model.elements[i];
@@ -467,7 +467,7 @@ impl DefinitionPlace {
                 }
             }
         }
-        app.status_hint = "Wheel zoom · drag pan · Tab next element · Enter inspect / drill into call activity · click a badge to filter instances · Ctrl+F find · ? help".into();
+        app.status_hint = crate::t!("hint-definition");
     }
 
     fn instances_dock(&mut self, ui: &mut egui::Ui, app: &mut App, model: &Arc<bpmn::Model>, open: &mut Option<(String, NavMode)>, select: &mut Option<bpmn::Ref>) {
@@ -475,15 +475,15 @@ impl DefinitionPlace {
         let w = ui.available_width();
         ui.add_sized([w, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique(("inst-filter", &self.def_id)), &mut self.instance_filter, "Business key or instance id", &mut self.filter_focus));
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.all_versions, "All versions");
+            ui.checkbox(&mut self.all_versions, crate::t!("common-all-versions"));
             if let Some(a) = self.activity_filter.clone() {
                 let name = model.element_by_id(&a).map(|e| e.display_name().to_string()).unwrap_or(a.clone());
-                if pill(ui, &format!("at: {name}  ✕"), tokens.running).on_hover_text("Clear activity filter").clicked() {
+                if pill(ui, &format!("{}: {name}  ✕", crate::t!("instances-at")), tokens.running).on_hover_text(crate::t!("instances-clear-activity-filter")).clicked() {
                     self.activity_filter = None;
                 }
             }
             if let Some(n) = self.instances_count.data {
-                ui.label(RichText::new(format!("{n} running")).weak());
+                ui.label(RichText::new(crate::t!("n-running", n = n)).weak());
             }
             loader_status_inline(ui, &self.instances, &tokens);
         });
@@ -494,7 +494,7 @@ impl DefinitionPlace {
             return;
         };
         if rows.is_empty() {
-            crate::widgets::empty_state(ui, "No running instances match.");
+            crate::widgets::empty_state(ui, &crate::t!("instances-empty"));
             return;
         }
         self.row_cursor = self.row_cursor.min(rows.len() - 1);
@@ -534,7 +534,7 @@ impl DefinitionPlace {
             .header(22.0, |mut hr| {
                 for t in ["Business key", "Started", "Id", "State"] {
                     hr.col(|ui| {
-                        ui.label(RichText::new(t).strong().size(11.5));
+                        ui.label(RichText::new(crate::i18n::col(t)).strong().size(11.5));
                     });
                 }
             })
@@ -570,20 +570,20 @@ impl DefinitionPlace {
                         *open = Some((r.id.clone(), NavMode::NewTab));
                     }
                     resp.context_menu(|ui| {
-                        if ui.button("Open").clicked() {
+                        if ui.button(crate::t!("common-open")).clicked() {
                             *open = Some((r.id.clone(), NavMode::Here));
                             ui.close();
                         }
-                        if ui.button("Open in new tab").clicked() {
+                        if ui.button(crate::t!("common-open-new-tab")).clicked() {
                             *open = Some((r.id.clone(), NavMode::NewTab));
                             ui.close();
                         }
-                        if ui.button("Copy id").clicked() {
+                        if ui.button(crate::t!("ctx-copy-id")).clicked() {
                             ui.ctx().copy_text(r.id.clone());
                             ui.close();
                         }
                         if let Some(bk) = &r.business_key {
-                            if ui.button("Copy business key").clicked() {
+                            if ui.button(crate::t!("common-copy-business-key")).clicked() {
                                 ui.ctx().copy_text(bk.clone());
                                 ui.close();
                             }
@@ -620,7 +620,7 @@ impl DefinitionPlace {
             return;
         };
         if list.is_empty() {
-            crate::widgets::empty_state(ui, "No open incidents for this version.");
+            crate::widgets::empty_state(ui, &crate::t!("definition-no-incidents"));
             return;
         }
         let sel_id = match self.view.selection {
@@ -636,7 +636,7 @@ impl DefinitionPlace {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     pill(ui, &inc.incident_type, tokens.incident);
-                    if ui.link(RichText::new(&name).strong()).on_hover_text("Select on diagram").clicked() {
+                    if ui.link(RichText::new(&name).strong()).on_hover_text(crate::t!("common-select-on-diagram")).clicked() {
                         if let Some(i) = model.element_idx(&act) {
                             *select = Some(bpmn::Ref::Element(i));
                         }
@@ -648,20 +648,20 @@ impl DefinitionPlace {
                 ui.add(egui::Label::new(RichText::new(inc.incident_message.clone().unwrap_or_default()).size(12.0)).wrap());
                 ui.horizontal(|ui| {
                     if let Some(pi) = &inc.process_instance_id {
-                        if ui.link(RichText::new(format!("instance {}", crate::util::short_uuid(pi))).monospace().size(11.5)).clicked() {
+                        if ui.link(RichText::new(crate::t!("instance-short", id = crate::util::short_uuid(pi))).monospace().size(11.5)).clicked() {
                             *open = Some((pi.clone(), if ui.input(|i| i.modifiers.shift) { NavMode::NewTab } else { NavMode::Here }));
                         }
                     }
                     if inc.incident_type == "failedJob" {
                         if let Some(job) = inc.configuration.clone() {
-                            if ui.small_button("Retry").on_hover_text("Set job retries to 1").clicked() {
+                            if ui.small_button(crate::t!("common-retry")).on_hover_text(crate::t!("incident-retry-job-tip")).clicked() {
                                 app.action_set_job_retries(job, 1);
                             }
                         }
                     }
                     if inc.incident_type == "failedExternalTask" {
                         if let Some(et) = inc.configuration.clone() {
-                            if ui.small_button("Retry").on_hover_text("Set external task retries to 1").clicked() {
+                            if ui.small_button(crate::t!("common-retry")).on_hover_text(crate::t!("incident-retry-external-tip")).clicked() {
                                 app.action_set_external_task_retries(et, 1);
                             }
                         }
@@ -681,7 +681,7 @@ impl DefinitionPlace {
         let stats = app.cache.def_stats.data.clone().unwrap_or_default();
         egui::Grid::new("versions-grid").num_columns(4).striped(true).spacing([12.0, 6.0]).show(ui, |ui| {
             for t in ["Version", "Running", "Incidents", "Deployed"] {
-                ui.label(RichText::new(t).strong().size(11.5));
+                ui.label(RichText::new(crate::i18n::col(t)).strong().size(11.5));
             }
             ui.end_row();
             for v in &list {
@@ -710,7 +710,7 @@ impl DefinitionPlace {
         if let Some(d) = &self.def.data {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                let label = if d.suspended { "Activate definition" } else { "Suspend definition" };
+                let label = if d.suspended { crate::t!("definition-activate-title") } else { crate::t!("definition-suspend-title") };
                 if ui.button(label).clicked() {
                     app.action_suspend_definition(d.id.clone(), !d.suspended);
                 }

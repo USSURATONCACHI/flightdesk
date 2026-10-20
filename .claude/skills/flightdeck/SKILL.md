@@ -48,4 +48,6 @@ project `.mcp.json` registers it; approve it or run
   off-screen hits (it hides them above 8 to avoid clutter; the minimap dots always show).
   `ui_find` with `goto: <index>` or `cycle: next|prev` makes a hit current and glides the camera
   to it, exactly like clicking an edge arrow or pressing Enter.
+- `ui_settings` also reads/sets `language` (`system` or a pack tag such as `ru-RU`); UI text
+  follows it, tool output stays English.
 - After navigation give the UI a moment, then `ui_state` or `ui_screenshot` to verify.

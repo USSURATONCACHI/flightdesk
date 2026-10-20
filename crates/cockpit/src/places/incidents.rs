@@ -40,11 +40,11 @@ impl IncidentsPlace {
                 progress_line(ui, egui::Rect::from_min_size(top.min - egui::Vec2::new(16.0, 16.0), egui::Vec2::new(top.width() + 32.0, 2.0)), tokens.accent);
             }
             ui.horizontal(|ui| {
-                heading_row(ui, "Incidents", self.list.data.as_ref().map(|l| format!("{} open", l.len())).as_deref());
+                heading_row(ui, &crate::t!("place-incidents"), self.list.data.as_ref().map(|l| crate::t!("n-open", n = l.len())).as_deref());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     app.refresh_controls(ui, self.list.age(), self.list.is_loading());
-                    ui.checkbox(&mut self.group, "Group by message");
-                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique("inc-filter"), &mut self.filter, "Filter message, type, definition, activity", &mut self.filter_focus));
+                    ui.checkbox(&mut self.group, crate::t!("incidents-group-by-message"));
+                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique("inc-filter"), &mut self.filter, &crate::t!("incidents-filter-hint"), &mut self.filter_focus));
                 });
             });
             loader_status_inline(ui, &self.list, &tokens);
@@ -60,7 +60,7 @@ impl IncidentsPlace {
                 })
                 .collect();
             if rows.is_empty() {
-                crate::widgets::empty_state(ui, if list.is_empty() { "No open incidents. 🎉" } else { "Nothing matches the filter." });
+                crate::widgets::empty_state(ui, &if list.is_empty() { crate::t!("incidents-empty") } else { crate::t!("common-nothing-matches-filter") });
                 return;
             }
             if self.group {
@@ -87,7 +87,7 @@ impl IncidentsPlace {
                                     }
                                     ui.label(RichText::new(i.time().map(crate::util::fmt_relative).unwrap_or_default()).weak().small());
                                     if let ("failedJob", Some(j)) = (i.incident_type.as_str(), i.configuration.clone()) {
-                                        if ui.small_button("Retry").clicked() {
+                                        if ui.small_button(crate::t!("common-retry")).clicked() {
                                             app.action_set_job_retries(j, 1);
                                         }
                                     }
@@ -139,7 +139,7 @@ impl IncidentsPlace {
                 .header(24.0, |mut h| {
                     for t in ["Time", "Type", "Definition", "Activity", "Message", "Instance", ""] {
                         h.col(|ui| {
-                            ui.label(RichText::new(t).strong().size(12.0));
+                            ui.label(RichText::new(crate::i18n::col(t)).strong().size(12.0));
                         });
                     }
                 })
@@ -170,7 +170,7 @@ impl IncidentsPlace {
                             }
                         });
                         row.col(|ui| {
-                            let retry = |ui: &mut egui::Ui| ui.small_button("Retry").on_hover_text("Set retries to 1").clicked();
+                            let retry = |ui: &mut egui::Ui| ui.small_button(crate::t!("common-retry")).on_hover_text(crate::t!("incident-retry-tip")).clicked();
                             match (inc.incident_type.as_str(), inc.configuration.clone()) {
                                 ("failedJob", Some(j)) if retry(ui) => app.action_set_job_retries(j, 1),
                                 ("failedExternalTask", Some(e)) if retry(ui) => app.action_set_external_task_retries(e, 1),
@@ -195,7 +195,7 @@ impl IncidentsPlace {
             if let Some((id, mode)) = open {
                 app.navigate(Nav::Instance { id }, mode);
             }
-            app.status_hint = "↑↓ move · Enter open instance · Shift+Enter new tab · / filter".into();
+            app.status_hint = crate::t!("hint-incidents");
         });
     }
 }

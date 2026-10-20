@@ -30,7 +30,7 @@ impl Confirm {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let b = egui::Button::new(egui::RichText::new(&self.confirm_label).color(egui::Color32::WHITE)).fill(if self.danger { tokens.incident } else { tokens.accent });
                     let confirm = ui.add(b);
-                    let cancel = ui.button("Cancel");
+                    let cancel = ui.button(crate::t!("common-cancel"));
                     if self.first_frame {
                         cancel.request_focus();
                         self.first_frame = false;
@@ -41,7 +41,7 @@ impl Confirm {
                     if cancel.clicked() || (cancel.has_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
                         result = Some(false);
                     }
-                    ui.label(egui::RichText::new("Tab to Confirm, or type y").weak().small());
+                    ui.label(egui::RichText::new(crate::t!("confirm-hint")).weak().small());
                 });
             });
             ctx.input_mut(|i| {

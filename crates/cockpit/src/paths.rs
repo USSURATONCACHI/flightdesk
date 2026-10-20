@@ -23,6 +23,30 @@ impl Dirs {
 /// Environment variable names honoured by the binary.
 pub const ENV_CONFIG_DIR: &str = "FLIGHTDECK_CONFIG_DIR";
 pub const ENV_DATA_DIR: &str = "FLIGHTDECK_DATA_DIR";
+/// Colon-separated list of directories holding language packs; replaces the default search path.
+pub const ENV_LOCALE_DIR: &str = "FLIGHTDECK_LOCALE_DIR";
+
+/// Where language packs are looked for when nothing is specified, most specific first:
+/// the user's config and data dirs, every XDG data dir (`/usr/share/flightdeck/locales` for the
+/// package), and next to the executable (`target/debug/../../locales` for a cargo build).
+pub fn default_locale_dirs(dirs: &Dirs, xdg_data_dirs: Option<&str>, exe: Option<&std::path::Path>) -> Vec<PathBuf> {
+    let mut v = vec![dirs.config.join("locales"), dirs.data.join("locales")];
+    let xdg = xdg_data_dirs.filter(|s| !s.trim().is_empty()).unwrap_or("/usr/local/share:/usr/share");
+    for d in xdg.split(':').filter(|d| !d.is_empty()) {
+        v.push(PathBuf::from(d).join("flightdeck").join("locales"));
+    }
+    if let Some(exe_dir) = exe.and_then(|e| e.parent()) {
+        v.push(exe_dir.join("locales"));
+        v.push(exe_dir.join("..").join("locales"));
+        v.push(exe_dir.join("..").join("..").join("locales"));
+    }
+    v
+}
+
+/// Parse a `PATH`-style list into directories, dropping empty entries.
+pub fn split_dir_list(s: &str) -> Vec<PathBuf> {
+    s.split(':').filter(|d| !d.trim().is_empty()).map(|d| expand_tilde(d.trim())).collect()
+}
 
 /// Combine explicitly given directories with platform defaults.
 ///
@@ -69,6 +93,21 @@ mod tests {
         assert!(e.contains("FLIGHTDECK_CONFIG_DIR"));
         assert!(resolve(None, None, || None).is_err(), "no defaults available is an error, not a panic");
     }
+    #[test]
+    fn locale_search_path_is_user_then_system_then_exe() {
+        let d = Dirs { config: "/home/u/.config/flightdeck".into(), data: "/home/u/.local/share/flightdeck".into() };
+        let v = default_locale_dirs(&d, Some("/opt/share:/usr/share"), Some(std::path::Path::new("/repo/target/debug/flightdeck")));
+        let s: Vec<String> = v.iter().map(|p| p.display().to_string()).collect();
+        assert_eq!(s[0], "/home/u/.config/flightdeck/locales");
+        assert_eq!(s[1], "/home/u/.local/share/flightdeck/locales");
+        assert_eq!(s[2], "/opt/share/flightdeck/locales");
+        assert_eq!(s[3], "/usr/share/flightdeck/locales");
+        assert!(s.iter().any(|p| p == "/repo/target/debug/../../locales"), "{s:?}");
+        let v = default_locale_dirs(&d, None, None);
+        assert!(v.iter().any(|p| p == std::path::Path::new("/usr/share/flightdeck/locales")), "XDG default applies");
+        assert_eq!(split_dir_list("/a::/b:"), vec![PathBuf::from("/a"), PathBuf::from("/b")]);
+    }
+
     #[test]
     fn derived_files() {
         let d = Dirs { config: "/c".into(), data: "/x".into() };

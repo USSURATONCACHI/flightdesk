@@ -38,7 +38,7 @@ pub fn dock<R>(ui: &mut Ui, app: &mut App, id: &str, tabs: &[&str], current: &mu
     let out = egui::Frame::new().inner_margin(egui::Margin { left: 8, right: 8, top: 6, bottom: 2 }).show(&mut pane, |ui| {
         ui.horizontal_wrapped(|ui| {
             for (i, t) in tabs.iter().enumerate() {
-                let r = ui.selectable_label(*current == i, *t);
+                let r = ui.selectable_label(*current == i, crate::i18n::dock_tab(t));
                 let r = if i < 9 { r.on_hover_text(format!("Ctrl+{}", i + 1)) } else { r };
                 if r.clicked() {
                     *current = i;
@@ -69,7 +69,7 @@ pub fn loader_status<T>(ui: &mut Ui, l: &crate::net::Loader<T>, tokens: &crate::
     if l.is_loading() && l.data.is_none() {
         ui.horizontal(|ui| {
             ui.spinner();
-            ui.label(egui::RichText::new("Loading…").weak());
+            ui.label(egui::RichText::new(crate::t!("common-loading")).weak());
         });
     }
     if let Some(e) = &l.error {

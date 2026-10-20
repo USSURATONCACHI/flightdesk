@@ -41,20 +41,20 @@ impl DefinitionsPlace {
                 progress_line(ui, egui::Rect::from_min_size(top.min - egui::Vec2::new(16.0, 16.0), egui::Vec2::new(top.width() + 32.0, 2.0)), app.tokens.accent);
             }
             ui.horizontal(|ui| {
-                heading_row(ui, "Process definitions", None);
+                heading_row(ui, &crate::t!("definitions-title"), None);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.checkbox(&mut self.show_all_versions, "All versions");
+                    ui.checkbox(&mut self.show_all_versions, crate::t!("common-all-versions"));
                     ui.add_space(8.0);
-                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique("defs-filter"), &mut self.filter, "Filter by key or name", &mut self.filter_focus));
+                    ui.add_sized([320.0, 24.0], |ui: &mut egui::Ui| filter_box(ui, egui::Id::unique("defs-filter"), &mut self.filter, &crate::t!("definitions-filter-hint"), &mut self.filter_focus));
                 });
             });
             ui.add_space(8.0);
             if let Some(e) = &app.cache.defs.error {
-                ui.label(RichText::new(format!("Cannot load definitions: {}", e.short())).color(app.tokens.incident));
+                ui.label(RichText::new(crate::t!("definitions-load-failed", error = e.short())).color(app.tokens.incident));
             }
             let rows = self.rows(app);
             if rows.is_empty() && app.cache.defs.data.is_some() {
-                crate::widgets::empty_state(ui, if self.filter.is_empty() { "No process definitions deployed." } else { "Nothing matches the filter." });
+                crate::widgets::empty_state(ui, &if self.filter.is_empty() { crate::t!("definitions-empty") } else { crate::t!("common-nothing-matches-filter") });
                 return;
             }
             self.cursor = self.cursor.min(rows.len().saturating_sub(1));
@@ -98,7 +98,7 @@ impl DefinitionsPlace {
                     for (i, t) in ["Name", "Key", "Version", "Running", "Incidents", "State"].iter().enumerate() {
                         h.col(|ui| {
                             let arrow = if self.sort.0 == i { if self.sort.1 { " ▲" } else { " ▼" } } else { "" };
-                            if ui.add(egui::Label::new(RichText::new(format!("{t}{arrow}")).strong().size(12.0)).sense(egui::Sense::click())).clicked() {
+                            if ui.add(egui::Label::new(RichText::new(format!("{}{arrow}", crate::i18n::col(t))).strong().size(12.0)).sense(egui::Sense::click())).clicked() {
                                 self.sort = if self.sort.0 == i { (i, !self.sort.1) } else { (i, true) };
                             }
                         });
@@ -135,7 +135,7 @@ impl DefinitionsPlace {
                         });
                         row.col(|ui| {
                             if r.def.suspended {
-                                ui.label(RichText::new("suspended").color(tokens.suspended));
+                                ui.label(RichText::new(crate::t!("state-suspended")).color(tokens.suspended));
                             }
                         });
                         let resp = row.response();
@@ -147,23 +147,23 @@ impl DefinitionsPlace {
                             open = Some((r.def.id.clone(), NavMode::NewTab));
                         }
                         resp.context_menu(|ui| {
-                            if ui.button("Open").clicked() {
+                            if ui.button(crate::t!("common-open")).clicked() {
                                 open = Some((r.def.id.clone(), NavMode::Here));
                                 ui.close();
                             }
-                            if ui.button("Open in new tab").clicked() {
+                            if ui.button(crate::t!("common-open-new-tab")).clicked() {
                                 open = Some((r.def.id.clone(), NavMode::NewTab));
                                 ui.close();
                             }
-                            if ui.button("Search instances").clicked() {
+                            if ui.button(crate::t!("common-search-instances")).clicked() {
                                 app.navigate(Nav::Search { query: format!("def:{}", r.def.key) }, NavMode::Here);
                                 ui.close();
                             }
-                            if ui.button("Copy key").clicked() {
+                            if ui.button(crate::t!("definitions-copy-key")).clicked() {
                                 ui.ctx().copy_text(r.def.key.clone());
                                 ui.close();
                             }
-                            if ui.button("Copy definition id").clicked() {
+                            if ui.button(crate::t!("definitions-copy-id")).clicked() {
                                 ui.ctx().copy_text(r.def.id.clone());
                                 ui.close();
                             }
@@ -174,7 +174,7 @@ impl DefinitionsPlace {
             if let Some((id, mode)) = open {
                 app.navigate(Nav::Definition { id }, mode);
             }
-            app.status_hint = "↑↓ move · Enter open · Shift+Enter new tab · / filter".into();
+            app.status_hint = crate::t!("hint-list");
         });
     }
 

@@ -78,7 +78,7 @@ fn specs_vec() -> Vec<Spec> {
         s("ui_screenshot", "Screenshot of the window as PNG (returned as image; also saved to path if given). max_width downsizes to save tokens.", obj(json!({"path": {"type": "string"}, "max_width": {"type": "integer", "default": 1280}}), &[])),
         s("ui_confirm", "Accept or cancel the pending confirmation dialog.", obj(json!({"accept": {"type": "boolean"}}), &["accept"])),
         s("ui_modification_queue", "Read or edit the Modify tab of the open instance: list | add (instruction) | clear | apply.", obj(json!({"action": {"type": "string", "enum": ["list", "add", "clear", "apply"]}, "instruction": {"type": "object"}}), &["action"])),
-        s("ui_settings", "Read or change settings: theme (system|light|dark), density, wheel_zooms, inertia, pointer_wrap (auto|off), zoom_speed / zoom_speed_mouse / zoom_speed_keyboard / alt_speed (multipliers 0.1–10; effective = global × device, Alt held multiplies by alt_speed), refresh_instance_secs, refresh_list_secs, page_size, paused.", obj(json!({"set": {"type": "object"}}), &[])),
+        s("ui_settings", "Read or change settings: theme (system|light|dark), language (system or a pack tag such as ru-RU; UI text only, tool output stays English), density, wheel_zooms, inertia, pointer_wrap (auto|off), zoom_speed / zoom_speed_mouse / zoom_speed_keyboard / alt_speed (multipliers 0.1–10; effective = global × device, Alt held multiplies by alt_speed), refresh_instance_secs, refresh_list_secs, page_size, paused.", obj(json!({"set": {"type": "object"}}), &[])),
         s("ui_connect", "Connect to an engine (URL, user, password) or disconnect.", obj(json!({"url": {"type": "string"}, "user": {"type": "string"}, "password": {"type": "string"}, "disconnect": {"type": "boolean"}}), &[])),
     ]
 }
@@ -1108,10 +1108,10 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 }
                 Ok(Some(json!({"ok": true})))
             }
-            "ui_commands" => Ok(Some(json!(crate::commands::Cmd::ALL.iter().map(|c| json!({"name": format!("{:?}", c), "label": c.info().name, "keys": c.info().keys_label, "enabled": c.enabled(app)})).collect::<Vec<_>>()))),
+            "ui_commands" => Ok(Some(json!(crate::commands::Cmd::ALL.iter().map(|c| json!({"name": format!("{:?}", c), "label": c.info().name(), "keys": c.info().keys_label, "enabled": c.enabled(app)})).collect::<Vec<_>>()))),
             "ui_command" => {
                 let n = need(&a, "name")?.to_lowercase().replace(['_', '-', ' '], "");
-                let cmd = crate::commands::Cmd::ALL.iter().copied().find(|c| format!("{c:?}").to_lowercase() == n || c.info().name.to_lowercase().replace([' ', '/', '-'], "").contains(&n)).ok_or("unknown command; see ui_commands")?;
+                let cmd = crate::commands::Cmd::ALL.iter().copied().find(|c| format!("{c:?}").to_lowercase() == n || c.info().name().to_lowercase().replace([' ', '/', '-'], "").contains(&n)).ok_or("unknown command; see ui_commands")?;
                 if !cmd.enabled(app) {
                     return Err("command is not enabled right now".into());
                 }
@@ -1228,6 +1228,14 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                                 app.settings.density = v.as_f64().unwrap_or(1.0) as f32;
                                 app.frame_theme_dirty = true;
                             }
+                            "language" => {
+                                let want = v.as_str().unwrap_or(crate::i18n::SYSTEM).to_string();
+                                if want != crate::i18n::SYSTEM && !app.language_packs.iter().any(|p| p.tag.eq_ignore_ascii_case(&want)) {
+                                    return Err(format!("no language pack {want}; available: system, {}", app.language_packs.iter().map(|p| p.tag.as_str()).collect::<Vec<_>>().join(", ")));
+                                }
+                                app.settings.language = want;
+                                app.apply_language();
+                            }
                             "wheel_zooms" => app.settings.wheel_zooms = v.as_bool().unwrap_or(true),
                             "inertia" => app.settings.inertia = v.as_bool().unwrap_or(true),
                             "pointer_wrap" => {
@@ -1258,7 +1266,7 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                     }
                     app.settings_dirty = true;
                 }
-                Ok(Some(json!({"theme": format!("{:?}", app.settings.theme), "density": app.settings.density, "wheel_zooms": app.settings.wheel_zooms, "inertia": app.settings.inertia, "pointer_wrap": format!("{:?}", app.settings.pointer_wrap), "zoom_speed": app.settings.zoom_speed, "zoom_speed_mouse": app.settings.zoom_speed_mouse, "zoom_speed_keyboard": app.settings.zoom_speed_keyboard, "alt_speed": app.settings.alt_speed, "zoom_effective": {"mouse": app.settings.zoom_mouse(), "keyboard": app.settings.zoom_keyboard(), "alt": app.settings.alt_boost()}, "refresh_instance_secs": app.settings.refresh_instance_secs, "refresh_list_secs": app.settings.refresh_list_secs, "page_size": app.settings.page_size, "paused": app.paused, "mcp_port": app.settings.mcp_port})))
+                Ok(Some(json!({"theme": format!("{:?}", app.settings.theme), "language": app.settings.language, "language_active": crate::i18n::active_tag(), "languages_available": app.language_packs.iter().map(|p| json!({"tag": p.tag, "name": p.name})).collect::<Vec<_>>(), "density": app.settings.density, "wheel_zooms": app.settings.wheel_zooms, "inertia": app.settings.inertia, "pointer_wrap": format!("{:?}", app.settings.pointer_wrap), "zoom_speed": app.settings.zoom_speed, "zoom_speed_mouse": app.settings.zoom_speed_mouse, "zoom_speed_keyboard": app.settings.zoom_speed_keyboard, "alt_speed": app.settings.alt_speed, "zoom_effective": {"mouse": app.settings.zoom_mouse(), "keyboard": app.settings.zoom_keyboard(), "alt": app.settings.alt_boost()}, "refresh_instance_secs": app.settings.refresh_instance_secs, "refresh_list_secs": app.settings.refresh_list_secs, "page_size": app.settings.page_size, "paused": app.paused, "mcp_port": app.settings.mcp_port})))
             }
             "ui_connect" => {
                 if arg_bool(&a, "disconnect") == Some(true) {

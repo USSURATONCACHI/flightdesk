@@ -28,7 +28,7 @@ pub fn cell(ui: &mut egui::Ui, text: impl Into<egui::RichText>) -> egui::Respons
 pub fn copy_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let size = egui::Vec2::splat(16.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    let resp = resp.on_hover_text(format!("Copy\n{}", crate::util::ellipsize(text, 120)));
+    let resp = resp.on_hover_text(format!("{}\n{}", crate::t!("common-copy"), crate::util::ellipsize(text, 120)));
     let flash_id = resp.id.with("copied-at");
     if resp.clicked() {
         ui.ctx().copy_text(text.to_string());

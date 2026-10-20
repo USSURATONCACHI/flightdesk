@@ -75,6 +75,8 @@ package() {
   for s in 16 22 24 32 48 64 128 256 512; do
     install -Dm644 "$srcdir/flightdeck-$s.png" "$pkgdir/usr/share/icons/hicolor/${s}x${s}/apps/flightdeck.png"
   done
+  # language packs: the app searches /usr/share/flightdeck/locales (XDG_DATA_DIRS)
+  install -Dm644 locales/*.ftl -t "$pkgdir/usr/share/flightdeck/locales"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md DESIGN.md -t "$pkgdir/usr/share/doc/$pkgname"
   install -Dm644 .claude/skills/flightdeck/SKILL.md "$pkgdir/usr/share/doc/$pkgname/mcp-skill.md"

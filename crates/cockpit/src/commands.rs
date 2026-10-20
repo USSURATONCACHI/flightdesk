@@ -34,10 +34,21 @@ pub enum Cmd {
 }
 
 pub struct CmdInfo {
-    pub name: &'static str,
+    /// Message id of the human name (see `name()`).
+    pub name_key: &'static str,
     pub shortcut: Option<KeyboardShortcut>,
     pub keys_label: &'static str,
-    pub category: &'static str,
+    /// Message id of the category (see `category()`).
+    pub category_key: &'static str,
+}
+
+impl CmdInfo {
+    pub fn name(&self) -> String {
+        crate::t!(self.name_key)
+    }
+    pub fn category(&self) -> String {
+        crate::t!(self.category_key)
+    }
 }
 
 const fn sc(m: Modifiers, k: Key) -> Option<KeyboardShortcut> {
@@ -75,31 +86,31 @@ impl Cmd {
 
     pub fn info(self) -> CmdInfo {
         match self {
-            Cmd::Palette => CmdInfo { name: "Command palette", shortcut: sc(Modifiers::COMMAND, Key::K), keys_label: "Ctrl+K", category: "General" },
-            Cmd::SearchInstances => CmdInfo { name: "Search process instances", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::F), keys_label: "Ctrl+Shift+F", category: "Navigate" },
-            Cmd::FindInDiagram => CmdInfo { name: "Find element in diagram", shortcut: sc(Modifiers::COMMAND, Key::F), keys_label: "Ctrl+F", category: "Diagram" },
-            Cmd::GoDefinitions => CmdInfo { name: "Go to process definitions", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::D), keys_label: "Ctrl+Shift+D", category: "Navigate" },
-            Cmd::GoIncidents => CmdInfo { name: "Go to incidents", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::I), keys_label: "Ctrl+Shift+I", category: "Navigate" },
-            Cmd::GoBatches => CmdInfo { name: "Go to batches", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::B), keys_label: "Ctrl+Shift+B", category: "Navigate" },
-            Cmd::GoSettings => CmdInfo { name: "Open settings", shortcut: sc(Modifiers::COMMAND, Key::Comma), keys_label: "Ctrl+,", category: "General" },
-            Cmd::NewTab => CmdInfo { name: "New tab", shortcut: sc(Modifiers::COMMAND, Key::T), keys_label: "Ctrl+T", category: "Tabs" },
-            Cmd::CloseTab => CmdInfo { name: "Close tab", shortcut: sc(Modifiers::COMMAND, Key::W), keys_label: "Ctrl+W", category: "Tabs" },
-            Cmd::NextTab => CmdInfo { name: "Next tab", shortcut: sc(Modifiers::CTRL, Key::Tab), keys_label: "Ctrl+Tab", category: "Tabs" },
-            Cmd::PrevTab => CmdInfo { name: "Previous tab", shortcut: sc(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::Tab), keys_label: "Ctrl+Shift+Tab", category: "Tabs" },
-            Cmd::Back => CmdInfo { name: "Back", shortcut: sc(Modifiers::ALT, Key::ArrowLeft), keys_label: "Alt+←", category: "Navigate" },
-            Cmd::Forward => CmdInfo { name: "Forward", shortcut: sc(Modifiers::ALT, Key::ArrowRight), keys_label: "Alt+→", category: "Navigate" },
-            Cmd::Refresh => CmdInfo { name: "Refresh now", shortcut: sc(Modifiers::NONE, Key::F5), keys_label: "F5 / R", category: "General" },
-            Cmd::TogglePause => CmdInfo { name: "Pause / resume auto-refresh", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P), keys_label: "Ctrl+Shift+P", category: "General" },
-            Cmd::ToggleDock => CmdInfo { name: "Toggle side dock", shortcut: sc(Modifiers::COMMAND, Key::B), keys_label: "Ctrl+B", category: "View" },
-            Cmd::ToggleTheme => CmdInfo { name: "Cycle theme: system → light → dark", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::T), keys_label: "Ctrl+Shift+T", category: "View" },
-            Cmd::FitDiagram => CmdInfo { name: "Fit diagram", shortcut: None, keys_label: "0", category: "Diagram" },
-            Cmd::ZoomIn => CmdInfo { name: "Zoom in", shortcut: None, keys_label: "+", category: "Diagram" },
-            Cmd::ZoomOut => CmdInfo { name: "Zoom out", shortcut: None, keys_label: "−", category: "Diagram" },
-            Cmd::CopyCockpitLink => CmdInfo { name: "Copy link for Camunda Cockpit", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C), keys_label: "Ctrl+Shift+C", category: "General" },
-            Cmd::CopyPlaceId => CmdInfo { name: "Copy current id (definition / instance)", shortcut: None, keys_label: "", category: "General" },
-            Cmd::FocusFilter => CmdInfo { name: "Focus filter / search field", shortcut: None, keys_label: "/", category: "General" },
-            Cmd::Help => CmdInfo { name: "Keyboard shortcuts", shortcut: sc(Modifiers::NONE, Key::F1), keys_label: "F1 / ?", category: "General" },
-            Cmd::Disconnect => CmdInfo { name: "Disconnect from engine", shortcut: None, keys_label: "", category: "General" },
+            Cmd::Palette => CmdInfo { name_key: "cmd-palette", shortcut: sc(Modifiers::COMMAND, Key::K), keys_label: "Ctrl+K", category_key: "cat-general" },
+            Cmd::SearchInstances => CmdInfo { name_key: "cmd-search-instances", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::F), keys_label: "Ctrl+Shift+F", category_key: "cat-navigate" },
+            Cmd::FindInDiagram => CmdInfo { name_key: "cmd-find-in-diagram", shortcut: sc(Modifiers::COMMAND, Key::F), keys_label: "Ctrl+F", category_key: "cat-diagram" },
+            Cmd::GoDefinitions => CmdInfo { name_key: "cmd-go-definitions", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::D), keys_label: "Ctrl+Shift+D", category_key: "cat-navigate" },
+            Cmd::GoIncidents => CmdInfo { name_key: "cmd-go-incidents", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::I), keys_label: "Ctrl+Shift+I", category_key: "cat-navigate" },
+            Cmd::GoBatches => CmdInfo { name_key: "cmd-go-batches", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::B), keys_label: "Ctrl+Shift+B", category_key: "cat-navigate" },
+            Cmd::GoSettings => CmdInfo { name_key: "cmd-open-settings", shortcut: sc(Modifiers::COMMAND, Key::Comma), keys_label: "Ctrl+,", category_key: "cat-general" },
+            Cmd::NewTab => CmdInfo { name_key: "cmd-new-tab", shortcut: sc(Modifiers::COMMAND, Key::T), keys_label: "Ctrl+T", category_key: "cat-tabs" },
+            Cmd::CloseTab => CmdInfo { name_key: "cmd-close-tab", shortcut: sc(Modifiers::COMMAND, Key::W), keys_label: "Ctrl+W", category_key: "cat-tabs" },
+            Cmd::NextTab => CmdInfo { name_key: "cmd-next-tab", shortcut: sc(Modifiers::CTRL, Key::Tab), keys_label: "Ctrl+Tab", category_key: "cat-tabs" },
+            Cmd::PrevTab => CmdInfo { name_key: "cmd-prev-tab", shortcut: sc(Modifiers::CTRL.plus(Modifiers::SHIFT), Key::Tab), keys_label: "Ctrl+Shift+Tab", category_key: "cat-tabs" },
+            Cmd::Back => CmdInfo { name_key: "cmd-back", shortcut: sc(Modifiers::ALT, Key::ArrowLeft), keys_label: "Alt+←", category_key: "cat-navigate" },
+            Cmd::Forward => CmdInfo { name_key: "cmd-forward", shortcut: sc(Modifiers::ALT, Key::ArrowRight), keys_label: "Alt+→", category_key: "cat-navigate" },
+            Cmd::Refresh => CmdInfo { name_key: "cmd-refresh", shortcut: sc(Modifiers::NONE, Key::F5), keys_label: "F5 / R", category_key: "cat-general" },
+            Cmd::TogglePause => CmdInfo { name_key: "cmd-toggle-pause", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P), keys_label: "Ctrl+Shift+P", category_key: "cat-general" },
+            Cmd::ToggleDock => CmdInfo { name_key: "cmd-toggle-dock", shortcut: sc(Modifiers::COMMAND, Key::B), keys_label: "Ctrl+B", category_key: "cat-view" },
+            Cmd::ToggleTheme => CmdInfo { name_key: "cmd-toggle-theme", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::T), keys_label: "Ctrl+Shift+T", category_key: "cat-view" },
+            Cmd::FitDiagram => CmdInfo { name_key: "cmd-fit-diagram", shortcut: None, keys_label: "0", category_key: "cat-diagram" },
+            Cmd::ZoomIn => CmdInfo { name_key: "cmd-zoom-in", shortcut: None, keys_label: "+", category_key: "cat-diagram" },
+            Cmd::ZoomOut => CmdInfo { name_key: "cmd-zoom-out", shortcut: None, keys_label: "−", category_key: "cat-diagram" },
+            Cmd::CopyCockpitLink => CmdInfo { name_key: "cmd-copy-cockpit-link", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::C), keys_label: "Ctrl+Shift+C", category_key: "cat-general" },
+            Cmd::CopyPlaceId => CmdInfo { name_key: "cmd-copy-place-id", shortcut: None, keys_label: "", category_key: "cat-general" },
+            Cmd::FocusFilter => CmdInfo { name_key: "cmd-focus-filter", shortcut: None, keys_label: "/", category_key: "cat-general" },
+            Cmd::Help => CmdInfo { name_key: "cmd-help", shortcut: sc(Modifiers::NONE, Key::F1), keys_label: "F1 / ?", category_key: "cat-general" },
+            Cmd::Disconnect => CmdInfo { name_key: "cmd-disconnect", shortcut: None, keys_label: "", category_key: "cat-general" },
         }
     }
 
@@ -151,7 +162,7 @@ impl Cmd {
             Cmd::Refresh => app.bump_refresh(),
             Cmd::TogglePause => {
                 app.paused = !app.paused;
-                let m = if app.paused { "Auto-refresh paused" } else { "Auto-refresh resumed" };
+                let m = if app.paused { crate::t!("toast-refresh-paused") } else { crate::t!("toast-refresh-resumed") };
                 app.toasts.push(crate::widgets::ToastKind::Info, m);
             }
             Cmd::ToggleDock => app.dock_visible = !app.dock_visible,
@@ -258,9 +269,9 @@ impl Palette {
                     continue;
                 }
                 let info = c.info();
-                let hay = format!("{} {}", info.name, info.category).to_lowercase();
+                let hay = format!("{} {}", info.name(), info.category()).to_lowercase();
                 if let Some(score) = fuzzy(&hay, &ql) {
-                    out.push((Item::Cmd(c), info.name.to_string(), info.keys_label.to_string(), score));
+                    out.push((Item::Cmd(c), info.name(), info.keys_label.to_string(), score));
                 }
             }
         }
@@ -274,13 +285,13 @@ impl Palette {
                 }
             }
             if crate::util::is_uuid(q) {
-                out.push((Item::Nav(Nav::Instance { id: q.to_string() }), format!("Open instance {}", crate::util::short_uuid(q)), "process instance id".into(), 1000));
-                out.push((Item::Nav(Nav::Definition { id: q.to_string() }), "Open as definition id".into(), String::new(), 990));
+                out.push((Item::Nav(Nav::Instance { id: q.to_string() }), crate::t!("palette-open-instance", id = crate::util::short_uuid(q)), crate::t!("palette-kind-instance-id"), 1000));
+                out.push((Item::Nav(Nav::Definition { id: q.to_string() }), crate::t!("palette-open-as-definition"), String::new(), 990));
             } else if q.contains(':') && q.len() > 40 && !q.contains(' ') {
-                out.push((Item::Nav(Nav::Definition { id: q.to_string() }), format!("Open definition {}", crate::util::ellipsize(q, 40)), "process definition id".into(), 1000));
+                out.push((Item::Nav(Nav::Definition { id: q.to_string() }), crate::t!("palette-open-definition", id = crate::util::ellipsize(q, 40)), crate::t!("palette-kind-definition-id"), 1000));
             }
             if !q.is_empty() {
-                let label = if mode == '#' { format!("Search instances for business key “{q}”") } else { format!("Search instances: {q}") };
+                let label = if mode == '#' { crate::t!("palette-search-business-key", q = q) } else { crate::t!("palette-search-instances", q = q) };
                 let query = if mode == '#' { format!("bk:{q}") } else { q.to_string() };
                 out.push((Item::Search(query), label, "Enter".into(), if mode == '#' { 2000 } else { -50 }));
             }
@@ -303,7 +314,7 @@ impl Palette {
         egui::Area::new(egui::Id::unique("palette")).order(egui::Order::Foreground).fixed_pos(egui::Pos2::new(screen.center().x - w / 2.0, screen.min.y + 80.0)).show(ctx, |ui| {
             egui::Frame::popup(ui.style()).inner_margin(10.0).show(ui, |ui| {
                 ui.set_width(w);
-                let edit = egui::TextEdit::singleline(&mut self.query).id(egui::Id::unique("palette-input")).hint_text("Type a command, a definition key or name, an instance id or business key…   (> commands, # business key)").desired_width(f32::INFINITY).font(egui::TextStyle::Heading).frame(egui::Frame::NONE);
+                let edit = egui::TextEdit::singleline(&mut self.query).id(egui::Id::unique("palette-input")).hint_text(crate::t!("palette-hint")).desired_width(f32::INFINITY).font(egui::TextStyle::Heading).frame(egui::Frame::NONE);
                 let r = ui.add(edit);
                 if self.want_focus {
                     r.request_focus();
@@ -354,7 +365,7 @@ impl Palette {
                         }
                     }
                     if items.is_empty() {
-                        ui.label(egui::RichText::new("No matches").weak());
+                        ui.label(egui::RichText::new(crate::t!("common-no-matches")).weak());
                     }
                 });
             });
@@ -413,7 +424,7 @@ pub fn help_overlay(ctx: &egui::Context, app: &mut App) {
     // Two content-sized tables side by side; the window takes their width instead of forcing
     // one, and scrolls when the screen is shorter than the list.
     let max_h = ctx.content_rect().height() - 80.0;
-    egui::Window::new("Keyboard & mouse").collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).max_height(max_h).show(ctx, |ui| {
+    egui::Window::new(crate::t!("help-title")).collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).max_height(max_h).show(ctx, |ui| {
         egui::ScrollArea::vertical().max_height(max_h - 40.0).show(ui, |ui| {
             // Fixed width per table: side-by-side content inside a self-sizing window would
             // otherwise give the second table only the leftover width.
@@ -435,36 +446,36 @@ pub fn help_overlay(ctx: &egui::Context, app: &mut App) {
                 });
             };
             let diagram: Vec<(String, String)> = [
-                ("Wheel / pinch", "zoom at cursor"),
-                ("Alt (hold)", "pan and zoom faster (×2 by default, see Settings)"),
-                ("Shift+wheel", "pan horizontally"),
-                ("Drag, middle-drag, Space+drag", "pan (flick for inertia)"),
-                ("↑↓←→  WASD  HJKL", "pan (hold to accelerate, Shift faster)"),
-                ("+ / −", "zoom in / out (Alt: by the Alt factor)"),
-                ("0 · 1 · F · Shift+F", "fit all · 100% · fit selection · fit tokens"),
-                ("Double-click", "zoom to element (empty: fit all)"),
-                ("Tab / Shift+Tab", "next / previous element along the flow"),
-                ("Alt+→ / Alt+←", "follow outgoing / incoming flow (1-9 picks)"),
-                ("Enter", "inspect · drill into call activity"),
-                ("Ctrl+F", "find element or instance (Enter/Shift+Enter cycle)"),
-                ("Ctrl+C", "copy element id"),
-                ("M · G · I", "minimap · grid · element ids"),
-                ("Right-click", "context menu"),
-                ("Esc", "close find → clear selection"),
+                ("Wheel / pinch", crate::t!("help-d-wheel")),
+                ("Alt (hold)", crate::t!("help-d-alt")),
+                ("Shift+wheel", crate::t!("help-d-shift-wheel")),
+                ("Drag, middle-drag, Space+drag", crate::t!("help-d-drag")),
+                ("↑↓←→  WASD  HJKL", crate::t!("help-d-arrows")),
+                ("+ / −", crate::t!("help-d-plus-minus")),
+                ("0 · 1 · F · Shift+F", crate::t!("help-d-fit")),
+                ("Double-click", crate::t!("help-d-double-click")),
+                ("Tab / Shift+Tab", crate::t!("help-d-tab")),
+                ("Alt+→ / Alt+←", crate::t!("help-d-alt-arrows")),
+                ("Enter", crate::t!("help-d-enter")),
+                ("Ctrl+F", crate::t!("help-d-find")),
+                ("Ctrl+C", crate::t!("help-d-copy")),
+                ("M · G · I", crate::t!("help-d-toggles")),
+                ("Right-click", crate::t!("help-d-right-click")),
+                ("Esc", crate::t!("help-d-esc")),
             ]
             .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .map(|(k, v)| (k.to_string(), v.clone()))
             .collect();
-            let mut everywhere: Vec<(String, String)> = Cmd::ALL.iter().map(|c| c.info()).filter(|i| !i.keys_label.is_empty()).map(|i| (i.keys_label.to_string(), i.name.to_string())).collect();
-            everywhere.extend([("Ctrl+1…9", "dock tab"), ("↑↓ · Enter · Shift+Enter", "tables: move · open · open in new tab"), ("Middle-click", "open in new tab"), ("/", "focus the filter box"), ("Alt (hold)", "inspect element under the cursor")].iter().map(|(k, v)| (k.to_string(), v.to_string())));
+            let mut everywhere: Vec<(String, String)> = Cmd::ALL.iter().map(|c| c.info()).filter(|i| !i.keys_label.is_empty()).map(|i| (i.keys_label.to_string(), i.name())).collect();
+            everywhere.extend([("Ctrl+1…9", crate::t!("help-g-dock-tab")), ("↑↓ · Enter · Shift+Enter", crate::t!("help-g-tables")), ("Middle-click", crate::t!("help-g-middle-click")), ("/", crate::t!("help-g-slash")), ("Alt (hold)", crate::t!("help-g-alt"))].iter().map(|(k, v)| (k.to_string(), v.clone())));
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 28.0;
-                table(ui, "help-diagram", "Diagram", &diagram);
-                table(ui, "help-global", "Everywhere", &everywhere);
+                table(ui, "help-diagram", &crate::t!("help-diagram"), &diagram);
+                table(ui, "help-global", &crate::t!("help-everywhere"), &everywhere);
             });
         });
         ui.add_space(6.0);
-        ui.label(egui::RichText::new("Press ? or Esc to close").weak().small());
+        ui.label(egui::RichText::new(crate::t!("help-close-hint")).weak().small());
     });
     if !open || ctx.input(|i| i.key_pressed(Key::Escape)) {
         app.help_open = false;

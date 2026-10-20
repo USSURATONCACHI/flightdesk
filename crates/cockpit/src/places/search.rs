@@ -91,7 +91,7 @@ impl SearchPlace {
 
     pub fn title(&self) -> String {
         if self.executed.trim().is_empty() {
-            "Search".into()
+            crate::t!("common-search")
         } else {
             format!("🔍 {}", crate::util::ellipsize(&self.executed, 22))
         }
@@ -250,13 +250,13 @@ impl SearchPlace {
         let cursor_row = self.rows.data.as_ref().and_then(|r| r.get(self.cursor).cloned());
         let (main_rect, _) = super::dock(ui, app, "search-dock", &["Preview", "Syntax"], &mut dock_tab, |ui, tab, app| {
             if tab == 1 {
-                ui.label(RichText::new("Query syntax").strong());
+                ui.label(RichText::new(crate::t!("search-syntax-title")).strong());
                 for (f, d) in query::FIELDS {
                     crate::widgets::kv_mono(ui, f, d);
                 }
                 ui.add_space(6.0);
-                ui.label(RichText::new("Operators: field:value (=), != > >= < <= and ~ (like, * wildcard). Quote values with spaces. A bare word searches business keys; a bare uuid is an instance id.").weak().small());
-                ui.label(RichText::new("Examples").strong());
+                ui.label(RichText::new(crate::t!("search-syntax-operators")).weak().small());
+                ui.label(RichText::new(crate::t!("search-examples")).strong());
                 for ex in ["def:order_process var.amount>1000", "bk:ORD-2* inc:yes", "exec:Task_Validate state:finished started>-7d", "var.customer=\"Big Corp 1\" state:any"] {
                     if ui.link(RichText::new(ex).monospace().size(12.0)).clicked() {
                         self.query = ex.to_string();
@@ -266,12 +266,12 @@ impl SearchPlace {
                 return;
             }
             match &cursor_row {
-                None => crate::widgets::empty_state(ui, "Move the cursor over a result to preview its variables."),
+                None => crate::widgets::empty_state(ui, &crate::t!("search-preview-empty")),
                 Some(r) => {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(r.business_key.clone().unwrap_or_else(|| crate::util::short_uuid(&r.id))).strong());
                         pill(ui, state_label(&r.state), state_color(&r.state, &tokens));
-                        if ui.small_button("Open").clicked() {
+                        if ui.small_button(crate::t!("common-open")).clicked() {
                             app.navigate(Nav::Instance { id: r.id.clone() }, NavMode::Here);
                         }
                     });
@@ -284,7 +284,7 @@ impl SearchPlace {
                         crate::widgets::kv(ui, "ended", &crate::util::fmt_local(e));
                     }
                     ui.add_space(6.0);
-                    ui.label(RichText::new("Variables").strong());
+                    ui.label(RichText::new(crate::t!("search-variables")).strong());
                     loader_status_inline(ui, &self.preview, &tokens);
                     if let Some(v) = &self.preview.data {
                         for x in v {
@@ -292,7 +292,7 @@ impl SearchPlace {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(&x.name).strong().size(12.0));
                                 ui.label(RichText::new(x.type_.clone().unwrap_or_default()).weak().small());
-                                if ui.add(egui::Button::new("+ col").small()).on_hover_text("Add as a result column").clicked() && !self.var_columns.contains(&x.name) {
+                                if ui.add(egui::Button::new(crate::t!("search-add-column")).small()).on_hover_text(crate::t!("search-add-column-tip")).clicked() && !self.var_columns.contains(&x.name) {
                                     self.var_columns.push(x.name.clone());
                                 }
                             });
@@ -312,13 +312,13 @@ impl SearchPlace {
             if self.rows.is_loading() {
                 progress_line(ui, egui::Rect::from_min_size(top.min - egui::Vec2::new(16.0, 16.0), egui::Vec2::new(top.width() + 32.0, 2.0)), tokens.accent);
             }
-            heading_row(ui, "Search process instances", None);
+            heading_row(ui, &crate::t!("cmd-search-instances"), None);
             ui.add_space(6.0);
             // ---- query bar ----
             let mut run_now = false;
             let edit_id = egui::Id::unique("search-query");
             ui.horizontal(|ui| {
-                let edit = egui::TextEdit::singleline(&mut self.query).id(edit_id).hint_text("def:key  bk:ABC*  var.amount>1000  act:Task_x  state:finished  …   (Enter to search, Tab to accept a suggestion)").desired_width(ui.available_width() - 330.0).font(egui::TextStyle::Monospace);
+                let edit = egui::TextEdit::singleline(&mut self.query).id(edit_id).hint_text(crate::t!("search-query-hint")).desired_width(ui.available_width() - 330.0).font(egui::TextStyle::Monospace);
                 let out = edit.show(ui);
                 let r = &out.response;
                 if self.want_focus {
@@ -375,7 +375,7 @@ impl SearchPlace {
                                     accept = Some(i);
                                 }
                             }
-                            ui.label(RichText::new("Tab accepts · Enter searches").weak().small());
+                            ui.label(RichText::new(crate::t!("search-suggest-hint")).weak().small());
                         });
                     });
                 }
@@ -391,16 +391,16 @@ impl SearchPlace {
                     st.store(&ctx, edit_id);
                     r.request_focus();
                 }
-                if ui.add(egui::Button::new(RichText::new("Search ↵").color(egui::Color32::WHITE)).fill(tokens.accent)).clicked() {
+                if ui.add(egui::Button::new(RichText::new(format!("{} ↵", crate::t!("common-search"))).color(egui::Color32::WHITE)).fill(tokens.accent)).clicked() {
                     run_now = true;
                 }
                 // mode pill
                 let auto = self.force_mode.is_none();
                 let label = match mode {
-                    Mode::Runtime => "runtime",
-                    Mode::History => "history",
+                    Mode::Runtime => crate::t!("search-mode-runtime"),
+                    Mode::History => crate::t!("search-mode-history"),
                 };
-                let p = pill(ui, &format!("{label}{}", if auto { " (auto)" } else { "" }), if mode == Mode::History { tokens.completed } else { tokens.running }).on_hover_text("Which API answers: runtime = running instances only, history = running and finished. Click to force.");
+                let p = pill(ui, &format!("{label}{}", if auto { format!(" ({})", crate::t!("search-mode-auto")) } else { String::new() }), if mode == Mode::History { tokens.completed } else { tokens.running }).on_hover_text(crate::t!("search-mode-tip"));
                 if p.clicked() {
                     self.force_mode = match self.force_mode {
                         None => Some(if mode == Mode::Runtime { Mode::History } else { Mode::Runtime }),
@@ -409,16 +409,16 @@ impl SearchPlace {
                     self.run();
                 }
                 // saved searches
-                let sv = ui.button("☆").on_hover_text("Saved searches");
+                let sv = ui.button("☆").on_hover_text(crate::t!("settings-saved-searches"));
                 egui::Popup::menu(&sv).show(|ui| {
-                    if ui.button("Save current query…").clicked() {
+                    if ui.button(crate::t!("search-save-query")).clicked() {
                         self.saving = true;
                         self.save_name = query::describe(&parsed);
                     }
                     ui.separator();
                     let saved = app.settings.saved_searches.clone();
                     if saved.is_empty() {
-                        ui.label(RichText::new("No saved searches").weak());
+                        ui.label(RichText::new(crate::t!("search-no-saved")).weak());
                     }
                     for (i, s) in saved.iter().enumerate() {
                         ui.horizontal(|ui| {
@@ -436,14 +436,14 @@ impl SearchPlace {
             });
             if self.saving {
                 ui.horizontal(|ui| {
-                    ui.label("Name:");
+                    ui.label(format!("{}:", crate::t!("connect-name")));
                     let r = ui.add(egui::TextEdit::singleline(&mut self.save_name).desired_width(260.0));
-                    if ui.button("Save").clicked() || (r.has_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
+                    if ui.button(crate::t!("common-save")).clicked() || (r.has_focus() && ui.input(|i| i.key_pressed(Key::Enter))) {
                         app.settings.saved_searches.push(crate::settings::SavedSearch { name: self.save_name.clone(), query: self.query.clone() });
                         app.settings_dirty = true;
                         self.saving = false;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(crate::t!("common-cancel")).clicked() {
                         self.saving = false;
                     }
                 });
@@ -458,7 +458,7 @@ impl SearchPlace {
             // ---- result header ----
             ui.horizontal(|ui| {
                 if let Some(n) = self.count.data {
-                    ui.label(RichText::new(format!("{n} result{}", if n == 1 { "" } else { "s" })).strong());
+                    ui.label(RichText::new(crate::t!("search-results", n = n)).strong());
                 }
                 if !self.executed.is_empty() {
                     ui.label(RichText::new(query::describe(&query::parse(&self.executed))).weak().small());
@@ -467,7 +467,7 @@ impl SearchPlace {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     app.refresh_controls(ui, self.rows.age(), self.rows.is_loading());
                     // variable column adder
-                    let r = ui.add(egui::TextEdit::singleline(&mut self.new_var_col).hint_text("+ variable column").desired_width(140.0));
+                    let r = ui.add(egui::TextEdit::singleline(&mut self.new_var_col).hint_text(crate::t!("search-var-column-hint")).desired_width(140.0));
                     if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !self.new_var_col.trim().is_empty() {
                         let n = self.new_var_col.trim().to_string();
                         if !self.var_columns.contains(&n) {
@@ -476,7 +476,7 @@ impl SearchPlace {
                         self.new_var_col.clear();
                     }
                     for name in self.var_columns.clone() {
-                        if pill(ui, &format!("{name} ✕"), tokens.external).on_hover_text("Remove column").clicked() {
+                        if pill(ui, &format!("{name} ✕"), tokens.external).on_hover_text(crate::t!("search-remove-column")).clicked() {
                             self.var_columns.retain(|c| c != &name);
                         }
                     }
@@ -488,7 +488,7 @@ impl SearchPlace {
             }
             let Some(rows) = self.rows.data.clone() else {
                 if self.executed.is_empty() {
-                    crate::widgets::empty_state(ui, "Type a query and press Enter. Open the Syntax tab in the dock for the field list.");
+                    crate::widgets::empty_state(ui, &crate::t!("search-empty-hint"));
                 }
                 if let Some(e) = &self.rows.error {
                     ui.label(RichText::new(e.to_string()).color(tokens.incident));
@@ -496,7 +496,7 @@ impl SearchPlace {
                 return;
             };
             if rows.is_empty() {
-                crate::widgets::empty_state(ui, "No instances match.");
+                crate::widgets::empty_state(ui, &crate::t!("search-no-match"));
                 return;
             }
             self.cursor = self.cursor.min(rows.len() - 1);
@@ -570,12 +570,12 @@ impl SearchPlace {
                     });
                     for t in ["Business key", "Id", "Definition", "State", "Started", "Ended / duration"] {
                         hr.col(|ui| {
-                            ui.label(RichText::new(t).strong().size(12.0));
+                            ui.label(RichText::new(crate::i18n::col(t)).strong().size(12.0));
                         });
                     }
                     for v in &var_cols {
                         hr.col(|ui| {
-                            ui.label(RichText::new(format!("var {v}")).strong().size(12.0).color(tokens.external));
+                            ui.label(RichText::new(crate::t!("search-var-col", name = v.clone())).strong().size(12.0).color(tokens.external));
                         });
                     }
                     hr.col(|_| {});
@@ -615,7 +615,7 @@ impl SearchPlace {
                             let t = match (&r.end, r.duration_ms) {
                                 (Some(e), Some(d)) => format!("{} · {}", crate::util::fmt_local_short(e), crate::util::human_millis(d)),
                                 (Some(e), None) => crate::util::fmt_local_short(e),
-                                (None, _) => r.start.as_deref().and_then(crate::util::parse_time).map(|s| format!("running {}", crate::util::human_secs(chrono::Utc::now().signed_duration_since(s).num_seconds()))).unwrap_or_default(),
+                                (None, _) => r.start.as_deref().and_then(crate::util::parse_time).map(|s| crate::t!("running-for", duration = crate::util::human_secs(chrono::Utc::now().signed_duration_since(s).num_seconds()))).unwrap_or_default(),
                             };
                             ui.label(RichText::new(t).size(12.0));
                         });
@@ -651,25 +651,25 @@ impl SearchPlace {
                             open = Some((r.id.clone(), NavMode::NewTab));
                         }
                         resp.context_menu(|ui| {
-                            if ui.button("Open").clicked() {
+                            if ui.button(crate::t!("common-open")).clicked() {
                                 open = Some((r.id.clone(), NavMode::Here));
                                 ui.close();
                             }
-                            if ui.button("Open in new tab").clicked() {
+                            if ui.button(crate::t!("common-open-new-tab")).clicked() {
                                 open = Some((r.id.clone(), NavMode::NewTab));
                                 ui.close();
                             }
-                            if ui.button("Copy id").clicked() {
+                            if ui.button(crate::t!("ctx-copy-id")).clicked() {
                                 ui.ctx().copy_text(r.id.clone());
                                 ui.close();
                             }
                             if let Some(bk) = &r.business_key {
-                                if ui.button("Copy business key").clicked() {
+                                if ui.button(crate::t!("common-copy-business-key")).clicked() {
                                     ui.ctx().copy_text(bk.clone());
                                     ui.close();
                                 }
                             }
-                            if ui.button("Open definition").clicked() {
+                            if ui.button(crate::t!("common-open-definition")).clicked() {
                                 app.navigate(Nav::Definition { id: r.definition_id.clone() }, NavMode::Here);
                                 ui.close();
                             }
@@ -687,17 +687,17 @@ impl SearchPlace {
                 let ps = app.settings.page_size as i64;
                 if n > ps {
                     ui.horizontal(|ui| {
-                        if ui.add_enabled(self.page > 0, egui::Button::new("‹ prev")).clicked() {
+                        if ui.add_enabled(self.page > 0, egui::Button::new(format!("‹ {}", crate::t!("common-prev")))).clicked() {
                             self.page -= 1;
                         }
                         ui.label(RichText::new(format!("{}–{} of {n}", self.page as i64 * ps + 1, ((self.page as i64 + 1) * ps).min(n))).weak());
-                        if ui.add_enabled(((self.page as i64 + 1) * ps) < n, egui::Button::new("next ›")).clicked() {
+                        if ui.add_enabled(((self.page as i64 + 1) * ps) < n, egui::Button::new(format!("{} ›", crate::t!("common-next")))).clicked() {
                             self.page += 1;
                         }
                     });
                 }
             }
-            app.status_hint = "↑↓ move · Enter open · Shift+Enter new tab · Space select · Ctrl+A all · double-click open · / query".into();
+            app.status_hint = crate::t!("hint-search");
         });
         if let Some((id, mode)) = open {
             app.navigate(Nav::Instance { id }, mode);
@@ -710,28 +710,28 @@ impl SearchPlace {
         let n = ids.len();
         egui::Frame::new().fill(tokens.accent.gamma_multiply(0.12)).corner_radius(6.0).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(format!("{n} selected")).strong());
-                let batch = |app: &mut App, title: &str, body: String, label: &str, f: BatchFn| {
+                ui.label(RichText::new(crate::t!("search-selected", n = n)).strong());
+                let batch = |app: &mut App, title: String, body: String, label: String, f: BatchFn| {
                     let ids2 = ids.clone();
                     app.confirm = Some(Confirm::new(title, body, label, move |app: &mut App| f(app, ids2)));
                 };
-                if ui.button("Suspend").clicked() {
-                    batch(app, "Suspend instances", format!("Suspend {n} instance(s) as a batch?"), "Suspend", Box::new(|app, ids| run_batch(app, move |c| async move { c.suspend_async(&ids, true).await })));
+                if ui.button(crate::t!("common-suspend")).clicked() {
+                    batch(app, crate::t!("batch-suspend-title"), crate::t!("batch-suspend-body", n = n), crate::t!("common-suspend"), Box::new(|app, ids| run_batch(app, move |c| async move { c.suspend_async(&ids, true).await })));
                 }
-                if ui.button("Activate").clicked() {
-                    batch(app, "Activate instances", format!("Activate {n} instance(s) as a batch?"), "Activate", Box::new(|app, ids| run_batch(app, move |c| async move { c.suspend_async(&ids, false).await })));
+                if ui.button(crate::t!("common-activate")).clicked() {
+                    batch(app, crate::t!("batch-activate-title"), crate::t!("batch-activate-body", n = n), crate::t!("common-activate"), Box::new(|app, ids| run_batch(app, move |c| async move { c.suspend_async(&ids, false).await })));
                 }
-                if ui.button("Retry failed jobs").clicked() {
-                    batch(app, "Retry jobs", format!("Set job retries to 1 for {n} instance(s) as a batch?"), "Retry", Box::new(|app, ids| run_batch(app, move |c| async move { c.set_retries_async(&ids, 1).await })));
+                if ui.button(crate::t!("batch-retry-jobs")).clicked() {
+                    batch(app, crate::t!("batch-retry-title"), crate::t!("batch-retry-body", n = n), crate::t!("common-retry"), Box::new(|app, ids| run_batch(app, move |c| async move { c.set_retries_async(&ids, 1).await })));
                 }
-                if ui.button("Set variable…").clicked() {
+                if ui.button(crate::t!("batch-set-variable")).clicked() {
                     self.new_var_col = "name=value".into();
-                    app.toasts.push(ToastKind::Info, "Type name=value in the variable field, then press Enter in it while rows are selected (strings only).");
+                    app.toasts.push(ToastKind::Info, crate::t!("batch-set-variable-hint"));
                 }
-                if ui.button(RichText::new("Delete…").color(tokens.incident)).clicked() {
-                    batch(app, "Delete instances", format!("Delete {n} process instance(s) as a batch? This cannot be undone."), "Delete", Box::new(|app, ids| run_batch(app, move |c| async move { c.delete_async(&ids, "deleted via Flightdeck", false, false).await })));
+                if ui.button(RichText::new(crate::t!("batch-delete")).color(tokens.incident)).clicked() {
+                    batch(app, crate::t!("batch-delete-instances-title"), crate::t!("batch-delete-instances-body", n = n), crate::t!("common-delete"), Box::new(|app, ids| run_batch(app, move |c| async move { c.delete_async(&ids, "deleted via Flightdeck", false, false).await })));
                 }
-                if ui.button("Clear selection").clicked() {
+                if ui.button(crate::t!("search-clear-selection")).clicked() {
                     self.selected.clear();
                 }
             });
@@ -758,11 +758,11 @@ where
     let Some(net) = &app.net else { return };
     net.run(f, |app, r| match r {
         Ok(b) => {
-            app.toasts.push(ToastKind::Success, format!("Batch {} started ({} jobs). See Batches (Ctrl+Shift+B).", crate::util::short_uuid(&b.id), b.total_jobs));
+            app.toasts.push(ToastKind::Success, crate::t!("toast-batch-started", id = crate::util::short_uuid(&b.id), jobs = b.total_jobs));
             app.bump_refresh();
         }
         Err(e) => {
-            app.toasts.error("Batch could not be started", Some(e.to_string()));
+            app.toasts.error(crate::t!("toast-batch-start-failed"), Some(e.to_string()));
         }
     });
 }

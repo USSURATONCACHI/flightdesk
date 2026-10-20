@@ -32,11 +32,11 @@ impl FilePlace {
         if !self.warned && self.model.as_ref().map(|m| !m.warnings.is_empty()).unwrap_or(false) {
             self.warned = true;
             let n = self.model.as_ref().map(|m| m.warnings.len()).unwrap_or(0);
-            app.toasts.push(crate::widgets::ToastKind::Warning, format!("{n} diagram warning{} (see the Inspector tab)", if n == 1 { "" } else { "s" }));
+            app.toasts.push(crate::widgets::ToastKind::Warning, crate::t!("file-diagram-warnings", n = n));
         }
         let Some(model) = self.model.clone() else {
             egui::CentralPanel::default().show(ui, |ui| {
-                ui.label(format!("Cannot open {}: {}", self.path.display(), self.error.clone().unwrap_or_default()));
+                ui.label(crate::t!("file-open-failed", path = self.path.display().to_string(), error = self.error.clone().unwrap_or_default()));
             });
             return;
         };
@@ -45,7 +45,7 @@ impl FilePlace {
             0 => match self.view.selection.or(self.view.hover) {
                 Some(r) => actions = inspector::show(ui, &model, r, &RuntimeFacts::default(), false),
                 None => {
-                    crate::widgets::empty_state(ui, "Select an element to inspect it.\nTab cycles elements, Ctrl+F finds them.");
+                    crate::widgets::empty_state(ui, &crate::t!("inspector-empty-file"));
                     ui.add_space(12.0);
                     ui.label(egui::RichText::new(format!("{} flow nodes · {} flows · {} warnings", model.flow_nodes().count(), model.flows.len(), model.warnings.len())).weak());
                     for w in model.warnings.iter().take(20) {
@@ -83,7 +83,7 @@ impl FilePlace {
             });
             app.last_diagram_viewport = out.viewport;
             if out.copied {
-                app.toasts.push(crate::widgets::ToastKind::Info, "Element id copied");
+                app.toasts.push(crate::widgets::ToastKind::Info, crate::t!("toast-element-id-copied"));
             }
             if self.view.find.active() {
                 self.dock_tab = 1;
@@ -95,6 +95,6 @@ impl FilePlace {
                 self.view.fit_refs(&model, std::iter::once(r));
             }
         }
-        app.status_hint = "Drag/wheel: pan & zoom · 0 fit · F fit selection · Tab next element · Ctrl+F find · ? help".into();
+        app.status_hint = crate::t!("hint-file");
     }
 }

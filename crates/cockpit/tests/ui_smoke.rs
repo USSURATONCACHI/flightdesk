@@ -9,6 +9,14 @@ use egui_kittest::Harness;
 use serde_json::{json, Value};
 use std::sync::mpsc::sync_channel;
 
+/// Tests that look widgets up by their English label load the English pack from the repo
+/// (the library has no default locale directory).
+fn load_english() {
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../locales"));
+    let (_, report) = cockpit::i18n::load(&[dir], "en-US");
+    assert_eq!(report.active.as_deref(), Some("en-US"), "{report:?}");
+}
+
 fn call(app: &mut App, tool: &str, args: Value) -> Result<Value, String> {
     let (tx, rx) = sync_channel(1);
     tools::dispatch(app, McpCall { tool: tool.into(), args, reply: Reply::new(tx) });
@@ -71,6 +79,7 @@ fn theme_picker_renders_with_wgpu() {
 }
 
 fn theme_picker_flow(render: bool) {
+    load_english();
     let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn");
     let ctx = egui::Context::default();
     let mut app = App::new(&ctx, Settings::default(), 1.0);

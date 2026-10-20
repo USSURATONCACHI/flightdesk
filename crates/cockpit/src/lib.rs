@@ -4,6 +4,7 @@
 pub mod app;
 pub mod commands;
 pub mod history;
+pub mod i18n;
 pub mod icon;
 pub mod inspector;
 pub mod mcp;

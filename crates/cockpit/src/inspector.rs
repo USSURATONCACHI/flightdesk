@@ -37,9 +37,9 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
     // Header
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(e.display_name()).size(15.0).strong());
-        ui.label(RichText::new(e.kind.label()).weak());
+        ui.label(RichText::new(crate::i18n::bpmn_kind(&e.kind)).weak());
         for d in &e.event_defs {
-            ui.label(RichText::new(d.label()).weak());
+            ui.label(RichText::new(crate::i18n::bpmn_event(d)).weak());
         }
     });
     ui.add_space(4.0);
@@ -49,7 +49,7 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
         if let Some(n) = &e.name {
             kv(ui, "name", n);
         }
-        kv(ui, "type", &e.kind.label());
+        kv(ui, "type", &crate::i18n::bpmn_kind(&e.kind));
         if let Some(d) = &e.documentation {
             kv(ui, "documentation", d);
         }
@@ -71,12 +71,12 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
                     actions.push(InspectorAction::Select(Ref::Element(ai)));
                 }
             }
-            kv(ui, "interrupting", if e.interrupting { "yes" } else { "no" });
+            kv(ui, "interrupting", &if e.interrupting { crate::t!("common-yes") } else { crate::t!("common-no") });
         }
         if !e.boundary_events.is_empty() {
             for &b in &e.boundary_events {
                 let be = &m.elements[b];
-                let label = format!("{} ({})", be.display_name(), be.event_defs.first().map(|d| d.label()).unwrap_or("event"));
+                let label = format!("{} ({})", be.display_name(), be.event_defs.first().map(crate::i18n::bpmn_event).unwrap_or_else(|| crate::t!("bpmn-event-generic")));
                 if kv_link(ui, "boundary event", &label) {
                     actions.push(InspectorAction::Select(Ref::Element(b)));
                 }
@@ -91,14 +91,14 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
             }
             ui.horizontal_wrapped(|ui| {
                 let running = facts.running.unwrap_or(0);
-                if ui.add_enabled(running > 0 || !in_instance, egui::Button::new(format!("{running} running here")).small()).on_hover_text("Show instances waiting at this element").clicked() {
+                if ui.add_enabled(running > 0 || !in_instance, egui::Button::new(crate::t!("inspector-running-here", n = running)).small()).on_hover_text(crate::t!("inspector-running-here-tip")).clicked() {
                     actions.push(InspectorAction::InstancesAt(e.id.clone()));
                 }
                 let inc = facts.incidents.unwrap_or(0);
-                if inc > 0 && ui.add(egui::Button::new(RichText::new(format!("{inc} incidents")).color(crate::theme::INCIDENT)).small()).clicked() {
+                if inc > 0 && ui.add(egui::Button::new(RichText::new(crate::t!("n-incidents", n = inc)).color(crate::theme::INCIDENT)).small()).clicked() {
                     actions.push(InspectorAction::IncidentsAt(e.id.clone()));
                 }
-                if !in_instance && ui.add(egui::Button::new("Instances that executed this…").small()).on_hover_text("History search: executed activity").clicked() {
+                if !in_instance && ui.add(egui::Button::new(crate::t!("ctx-instances-executed")).small()).on_hover_text(crate::t!("inspector-executed-tip")).clicked() {
                     actions.push(InspectorAction::ExecutedAt(e.id.clone()));
                 }
             });
@@ -167,7 +167,7 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
                 kv(ui, "script format", f);
             }
             if let Some(s) = &e.script {
-                ui.label(RichText::new("script").weak().size(12.0));
+                ui.label(RichText::new(crate::i18n::kv_label("script")).weak().size(12.0));
                 code_block(ui, s);
             }
             for vm in &e.ext.variable_mappings {
@@ -295,7 +295,7 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
                             }
                         }
                         if let Some(w) = wait_for_completion {
-                            kv(ui, "wait for completion", if *w { "yes" } else { "no" });
+                            kv(ui, "wait for completion", &if *w { crate::t!("common-yes") } else { crate::t!("common-no") });
                         }
                     }
                     EventDef::Terminate => {
@@ -322,9 +322,9 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
                 }
             }
             egui::Grid::new(("gw-grid", &e.id)).num_columns(3).striped(true).spacing([10.0, 4.0]).show(ui, |ui| {
-                ui.label(RichText::new("flow").weak().size(11.0));
-                ui.label(RichText::new("target").weak().size(11.0));
-                ui.label(RichText::new("condition").weak().size(11.0));
+                ui.label(RichText::new(crate::i18n::col("flow")).weak().size(11.0));
+                ui.label(RichText::new(crate::i18n::col("target")).weak().size(11.0));
+                ui.label(RichText::new(crate::i18n::col("condition")).weak().size(11.0));
                 ui.end_row();
                 for &fi in &e.outgoing {
                     let f = &m.flows[fi];
@@ -372,7 +372,7 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
     // Multi-instance
     if let Some(mi) = &e.multi_instance {
         section(ui, ("mi", &e.id), "Multi-instance", true, |ui| {
-            kv(ui, "mode", if mi.sequential { "sequential" } else { "parallel" });
+            kv(ui, "mode", &if mi.sequential { crate::t!("mi-sequential") } else { crate::t!("mi-parallel") });
             if let Some(v) = &mi.collection {
                 kv_mono(ui, "collection", v);
             }
@@ -397,13 +397,13 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
     if !e.ext.inputs.is_empty() || !e.ext.outputs.is_empty() {
         section(ui, ("io", &e.id), "Input / output mapping", true, |ui| {
             if !e.ext.inputs.is_empty() {
-                ui.label(RichText::new("Inputs").weak().size(12.0));
+                ui.label(RichText::new(crate::t!("io-inputs")).weak().size(12.0));
                 for p in &e.ext.inputs {
                     param(ui, &p.name, &p.value, 0);
                 }
             }
             if !e.ext.outputs.is_empty() {
-                ui.label(RichText::new("Outputs").weak().size(12.0));
+                ui.label(RichText::new(crate::t!("io-outputs")).weak().size(12.0));
                 for p in &e.ext.outputs {
                     param(ui, &p.name, &p.value, 0);
                 }
@@ -469,7 +469,7 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
 
     section(ui, ("xml", &e.id), "XML", false, |ui| {
         let xml = bpmn::text::pretty_xml(m.xml_of_element(e));
-        if ui.small_button("Copy XML").clicked() {
+        if ui.small_button(crate::t!("inspector-copy-xml")).clicked() {
             ui.ctx().copy_text(xml.clone());
         }
         code_block(ui, &xml);
@@ -479,9 +479,9 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
 fn flow(ui: &mut Ui, m: &Model, f: &Flow, actions: &mut Vec<InspectorAction>) {
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(f.display_name()).size(15.0).strong());
-        ui.label(RichText::new(f.kind.label()).weak());
+        ui.label(RichText::new(crate::i18n::bpmn_flow(f.kind)).weak());
         if f.is_default {
-            ui.label(RichText::new("default").weak());
+            ui.label(RichText::new(crate::t!("tip-default-flow")).weak());
         }
     });
     ui.add_space(4.0);
@@ -542,7 +542,7 @@ fn flow(ui: &mut Ui, m: &Model, f: &Flow, actions: &mut Vec<InspectorAction>) {
     }
     section(ui, ("fxml", &f.id), "XML", false, |ui| {
         let xml = bpmn::text::pretty_xml(m.xml_of_flow(f));
-        if ui.small_button("Copy XML").clicked() {
+        if ui.small_button(crate::t!("inspector-copy-xml")).clicked() {
             ui.ctx().copy_text(xml.clone());
         }
         code_block(ui, &xml);
@@ -593,6 +593,6 @@ pub fn code_block(ui: &mut Ui, text: &str) {
         if r.clicked() {
             ui.ctx().copy_text(text.to_string());
         }
-        r.on_hover_text("Click to copy");
+        r.on_hover_text(crate::t!("common-click-to-copy"));
     });
 }

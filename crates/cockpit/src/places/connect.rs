@@ -2,6 +2,7 @@
 //! delete), the connection form on the right, centred as one group.
 
 use crate::app::App;
+use crate::t;
 use crate::settings::EngineProfile;
 use crate::widgets::Confirm;
 use egui::{Color32, Key, Modifiers, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Ui, Vec2};
@@ -153,7 +154,7 @@ fn connection_list(ui: &mut Ui, app: &mut App, rect: Rect) {
     let tokens = app.tokens.clone();
     card(ui, rect, &tokens, Stroke::new(1.0, tokens.bg3), |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Connections").strong().size(15.0));
+            ui.label(RichText::new(t!("connect-title")).strong().size(15.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let n = app.connect.selection.items.len();
                 if n > 1 {
@@ -161,7 +162,7 @@ fn connection_list(ui: &mut Ui, app: &mut App, rect: Rect) {
                 }
             });
         });
-        ui.label(RichText::new("Click · Ctrl adds · Shift ranges · Alt removes · drag to the bin").weak().small());
+        ui.label(RichText::new(t!("connect-list-hint")).weak().small());
         ui.add_space(6.0);
         let mut clicked: Option<(usize, Modifiers)> = None;
         let mut double: Option<usize> = None;
@@ -185,7 +186,8 @@ fn connection_list(ui: &mut Ui, app: &mut App, rect: Rect) {
                 if primary {
                     ui.painter().rect_filled(Rect::from_min_size(row_rect.min, Vec2::new(3.0, row_rect.height())), 2.0, tokens.accent);
                 }
-                let name = if e.name.trim().is_empty() { "(unnamed)" } else { e.name.as_str() };
+                let unnamed = t!("connect-unnamed");
+                let name = if e.name.trim().is_empty() { unnamed.as_str() } else { e.name.as_str() };
                 ui.painter().text(row_rect.min + Vec2::new(12.0, 7.0), egui::Align2::LEFT_TOP, name, egui::FontId::proportional(13.5), tokens.fg0);
                 ui.painter().text(row_rect.min + Vec2::new(12.0, 24.0), egui::Align2::LEFT_TOP, crate::util::ellipsize(&e.url, 34), egui::FontId::proportional(10.5), tokens.fg1);
                 if resp.clicked() {
@@ -217,14 +219,14 @@ fn connection_list(ui: &mut Ui, app: &mut App, rect: Rect) {
             }
             // "+" row
             let (_, plus_rect) = ui.allocate_space(Vec2::new(ui.available_width(), 36.0));
-            let plus = ui.interact(plus_rect, ui.make_persistent_id("conn-add"), Sense::click()).on_hover_text("Add a connection");
+            let plus = ui.interact(plus_rect, ui.make_persistent_id("conn-add"), Sense::click()).on_hover_text(t!("connect-add-tip"));
             if plus.hovered() {
                 ui.painter().rect_filled(plus_rect, 5.0, tokens.bg1);
             }
             ui.painter().text(plus_rect.min + Vec2::new(12.0, 8.0), egui::Align2::LEFT_TOP, "+  New connection", egui::FontId::proportional(13.0), tokens.accent);
             if plus.clicked() {
                 let n = app.settings.engines.len() + 1;
-                app.settings.engines.push(EngineProfile { name: format!("Connection {n}"), url: String::new(), ..Default::default() });
+                app.settings.engines.push(EngineProfile { name: t!("connect-new-name", n = n), url: String::new(), ..Default::default() });
                 app.connect.selection.select_only(app.settings.engines.len() - 1);
                 app.connect.focus_name = true;
                 app.connect.error = None;
@@ -232,7 +234,7 @@ fn connection_list(ui: &mut Ui, app: &mut App, rect: Rect) {
             }
             if app.settings.engines.is_empty() {
                 ui.add_space(8.0);
-                ui.label(RichText::new("No saved connections yet.").weak());
+                ui.label(RichText::new(t!("connect-empty")).weak());
             }
         });
         if let Some((i, mods)) = clicked {
@@ -279,7 +281,7 @@ fn trash_bin(ui: &mut Ui, app: &mut App, rect: Rect) {
         ui.set_min_size(rect.size() - Vec2::splat(22.0));
         ui.vertical_centered(|ui| {
             ui.label(RichText::new("🗑").size(20.0).color(if hovering { tokens.incident } else { tokens.fg1 }));
-            ui.label(RichText::new(if hovering { "Release to delete" } else { "Drop connections here to delete" }).small().color(if hovering { tokens.incident } else { tokens.fg1 }));
+            ui.label(RichText::new(if hovering { t!("connect-bin-release") } else { t!("connect-bin-hint") }).small().color(if hovering { tokens.incident } else { tokens.fg1 }));
         });
     });
     if let Some(payload) = dropped {
@@ -297,12 +299,12 @@ fn request_delete(app: &mut App, mut idx: Vec<usize>) {
     }
     let names: Vec<String> = idx.iter().map(|&i| app.settings.engines[i].name.clone()).collect();
     let body = if names.len() == 1 {
-        format!("Delete the connection “{}”?", names[0])
+        t!("connect-delete-one", name = names[0].clone())
     } else {
-        format!("Delete {} connections?\n• {}", names.len(), names.join("\n• "))
+        t!("connect-delete-many", n = names.len(), list = names.join("\n• "))
     };
     let idx = Arc::new(idx);
-    app.confirm = Some(Confirm::new("Delete connections", body, "Delete", move |app: &mut App| {
+    app.confirm = Some(Confirm::new(t!("connect-delete-title"), body, t!("common-delete"), move |app: &mut App| {
         for &i in idx.iter().rev() {
             if i < app.settings.engines.len() {
                 app.settings.engines.remove(i);
@@ -312,7 +314,7 @@ fn request_delete(app: &mut App, mut idx: Vec<usize>) {
         app.connect.selection.after_removal(&idx, remaining);
         app.settings.last_engine = app.connect.selection.primary.unwrap_or(0);
         app.settings_dirty = true;
-        app.toasts.push(crate::widgets::ToastKind::Success, format!("Deleted {} connection{}", idx.len(), if idx.len() == 1 { "" } else { "s" }));
+        app.toasts.push(crate::widgets::ToastKind::Success, t!("connect-deleted", n = idx.len()));
     }));
 }
 
@@ -320,12 +322,12 @@ fn form_card(ui: &mut Ui, app: &mut App, rect: Rect) {
     let tokens = app.tokens.clone();
     card(ui, rect, &tokens, Stroke::new(1.0, tokens.bg3), |ui| {
         ui.label(RichText::new("Flightdeck").size(22.0).strong());
-        ui.label(RichText::new("Connect to a Camunda 7 engine").weak());
+        ui.label(RichText::new(t!("connect-subtitle")).weak());
         ui.add_space(14.0);
         let Some(idx) = app.connect.selection.primary.filter(|&i| i < app.settings.engines.len()) else {
             ui.add_space(30.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Select a connection on the left, or add one with “+”.").weak());
+                ui.label(RichText::new(t!("connect-select-hint")).weak());
             });
             ui.add_space(30.0);
             offline_button(ui, app);
@@ -338,31 +340,31 @@ fn form_card(ui: &mut Ui, app: &mut App, rect: Rect) {
         {
             let p = &mut app.settings.engines[idx];
             egui::Grid::new("connect-grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                let l = ui.label("Name");
+                let l = ui.label(t!("connect-name"));
                 let r = ui.add(egui::TextEdit::singleline(&mut p.name).desired_width(f32::INFINITY)).labelled_by(l.id);
                 if focus_name {
                     r.request_focus();
                 }
                 dirty |= r.changed();
                 ui.end_row();
-                let l = ui.label("REST URL");
-                dirty |= ui.add(egui::TextEdit::singleline(&mut p.url).hint_text("http://host:8080/engine-rest  (a Cockpit URL works too)").desired_width(f32::INFINITY)).labelled_by(l.id).changed();
+                let l = ui.label(t!("connect-rest-url"));
+                dirty |= ui.add(egui::TextEdit::singleline(&mut p.url).hint_text(crate::t!("connect-url-hint")).desired_width(f32::INFINITY)).labelled_by(l.id).changed();
                 ui.end_row();
-                let l = ui.label("User");
-                dirty |= ui.add(egui::TextEdit::singleline(&mut p.user).hint_text("optional (basic auth)").desired_width(f32::INFINITY)).labelled_by(l.id).changed();
+                let l = ui.label(t!("connect-user"));
+                dirty |= ui.add(egui::TextEdit::singleline(&mut p.user).hint_text(t!("connect-user-hint")).desired_width(f32::INFINITY)).labelled_by(l.id).changed();
                 ui.end_row();
-                let l = ui.label("Password");
+                let l = ui.label(t!("connect-password"));
                 ui.horizontal(|ui| {
                     dirty |= ui.add(egui::TextEdit::singleline(&mut p.password).password(!show_password).desired_width(ui.available_width() - 40.0)).labelled_by(l.id).changed();
-                    if ui.selectable_label(show_password, "👁").on_hover_text("Show password").clicked() {
+                    if ui.selectable_label(show_password, "👁").on_hover_text(t!("connect-show-password")).clicked() {
                         toggle_show = true;
                     }
                 });
                 ui.end_row();
                 ui.label("");
                 ui.horizontal(|ui| {
-                    dirty |= ui.checkbox(&mut p.remember_password, "Remember password").on_hover_text("Stored (owner-readable only) in the settings file").changed();
-                    dirty |= ui.checkbox(&mut p.accept_invalid_certs, "Allow self-signed TLS").changed();
+                    dirty |= ui.checkbox(&mut p.remember_password, t!("connect-remember-password")).on_hover_text(t!("connect-remember-tip")).changed();
+                    dirty |= ui.checkbox(&mut p.accept_invalid_certs, t!("connect-allow-self-signed")).changed();
                 });
                 ui.end_row();
             });
@@ -375,7 +377,7 @@ fn form_card(ui: &mut Ui, app: &mut App, rect: Rect) {
         }
         ui.add_space(12.0);
         ui.horizontal(|ui| {
-            let btn = egui::Button::new(RichText::new(if app.connect.connecting { "Connecting…" } else { "Connect  ↵" }).color(Color32::WHITE)).fill(tokens.accent).min_size(Vec2::new(130.0, 30.0));
+            let btn = egui::Button::new(RichText::new(if app.connect.connecting { t!("connect-connecting") } else { format!("{}  ↵", t!("connect-connect")) }).color(Color32::WHITE)).fill(tokens.accent).min_size(Vec2::new(130.0, 30.0));
             if ui.add_enabled(!app.connect.connecting, btn).clicked() {
                 start_connect(app);
             }
@@ -389,12 +391,12 @@ fn form_card(ui: &mut Ui, app: &mut App, rect: Rect) {
             ui.label(RichText::new(e).color(tokens.incident));
         }
         ui.add_space(10.0);
-        ui.label(RichText::new("The URL is normalised: `host:8080`, `…/camunda/app/cockpit/…` and `…/engine-rest` all work.").weak().small());
+        ui.label(RichText::new(t!("connect-url-note")).weak().small());
     });
 }
 
 fn offline_button(ui: &mut Ui, app: &mut App) {
-    if ui.button("Open a .bpmn file").on_hover_text("Offline viewer: no engine needed (path from $FLIGHTDECK_BPMN)").clicked() {
+    if ui.button(t!("connect-open-bpmn")).on_hover_text(t!("connect-open-bpmn-tip")).clicked() {
         if let Some(path) = std::env::var("FLIGHTDECK_BPMN").ok().map(std::path::PathBuf::from) {
             app.navigate(crate::state::Nav::File { path }, crate::state::NavMode::NewTab);
             app.offline = true;

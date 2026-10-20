@@ -1,6 +1,8 @@
 //! The application shell: tabs, top bar, status line, overlays and the navigation model.
 
+use std::path::PathBuf;
 use crate::commands::{self, Cmd, Palette, PlaceRequest};
+use crate::t;
 use crate::net::{Loader, Net};
 use crate::places::*;
 use crate::places::connect::ConnectScreen;
@@ -85,6 +87,11 @@ pub struct App {
     pub startup_dock: Option<usize>,
     /// `--theme` from the command line: applies to this run only and is never saved.
     pub theme_override: Option<ThemeMode>,
+    /// Where language packs are searched (handed in by the binary; empty in tests).
+    pub locale_dirs: Vec<PathBuf>,
+    /// Packs found in `locale_dirs`, for the settings picker.
+    pub language_packs: Vec<crate::i18n::Pack>,
+    pub language_report: crate::i18n::Report,
     pub stats: bool,
     frame_times: Vec<f32>,
     pub mcp: Option<crate::mcp::McpServer>,
@@ -145,6 +152,9 @@ impl App {
             startup_nav: vec![],
             startup_dock: None,
             theme_override: None,
+            locale_dirs: vec![],
+            language_packs: vec![],
+            language_report: Default::default(),
             stats: false,
             frame_times: Vec::new(),
             mcp: None,
@@ -268,7 +278,7 @@ impl App {
                         if app.tabs.is_empty() || app.tabs.iter().all(|t| matches!(t.place(), Place::File(_) | Place::Settings(_))) {
                             app.navigate(Nav::Definitions, NavMode::NewTab);
                         }
-                        app.toasts.push(ToastKind::Success, format!("Connected to Camunda {}", v.version));
+                        app.toasts.push(ToastKind::Success, t!("toast-connected", version = v.version.clone()));
                         app.ensure_definitions();
                         for nav in std::mem::take(&mut app.startup_nav) {
                             app.navigate(nav, NavMode::Here);
@@ -277,8 +287,8 @@ impl App {
                     Err(e) => {
                         app.conn = ConnStatus::Error(e.short());
                         app.connect.error = Some(match &e {
-                            camunda::ApiError::Status { status: 401, .. } | camunda::ApiError::Status { status: 403, .. } => "Authentication failed: check user and password.".to_string(),
-                            camunda::ApiError::Status { status: 404, .. } => "404 at /version: the URL does not point at a Camunda REST API.".to_string(),
+                            camunda::ApiError::Status { status: 401, .. } | camunda::ApiError::Status { status: 403, .. } => t!("error-auth"),
+                            camunda::ApiError::Status { status: 404, .. } => t!("error-not-camunda"),
                             other => other.short(),
                         });
                         app.net = None;
@@ -338,12 +348,12 @@ impl App {
         match crate::mcp::McpServer::start(self.settings.mcp_port, token, self.mcp_queue.clone(), ctx) {
             Ok(s) => {
                 self.mcp_error = None;
-                self.toasts.push(ToastKind::Success, format!("MCP server listening on {}", s.url()));
+                self.toasts.push(ToastKind::Success, t!("toast-mcp-listening", url = s.url()));
                 self.mcp = Some(s);
             }
             Err(e) => {
                 self.mcp_error = Some(e.to_string());
-                self.toasts.error(format!("MCP server could not start on port {}", self.settings.mcp_port), Some(e.to_string()));
+                self.toasts.error(t!("toast-mcp-failed", port = self.settings.mcp_port), Some(e.to_string()));
             }
         }
     }
@@ -351,7 +361,7 @@ impl App {
     pub fn stop_mcp(&mut self) {
         if let Some(s) = self.mcp.take() {
             s.stop();
-            self.toasts.push(ToastKind::Info, "MCP server stopped");
+            self.toasts.push(ToastKind::Info, t!("toast-mcp-stopped"));
         }
     }
 
@@ -369,6 +379,17 @@ impl App {
 
     pub fn navigate(&mut self, nav: Nav, mode: NavMode) {
         self.pending_nav.push((nav, mode));
+    }
+
+    /// (Re)discover language packs in `locale_dirs` and activate the one the settings ask for.
+    /// Called once at start-up and whenever the language setting changes.
+    pub fn apply_language(&mut self) {
+        let (packs, report) = crate::i18n::load(&self.locale_dirs, &self.settings.language);
+        self.language_packs = packs;
+        self.language_report = report;
+        if let Some(ctx) = &self.ctx {
+            ctx.request_repaint();
+        }
     }
 
     /// Settings never replace what you were looking at: switch to an existing settings tab, or
@@ -397,7 +418,7 @@ impl App {
                             move |app: &mut App, r| match r {
                                 Ok(d) => app.navigate(Nav::Definition { id: d.id }, NavMode::Here),
                                 Err(e) => {
-                                    app.toasts.error(format!("No definition with key {key}"), Some(e.to_string()));
+                                    app.toasts.error(t!("toast-no-definition-key", key = key.clone()), Some(e.to_string()));
                                 }
                             },
                         );
@@ -472,7 +493,7 @@ impl App {
         };
         if let (Some(l), Some(ctx)) = (link, &self.ctx) {
             ctx.copy_text(l.clone());
-            self.toasts.push(ToastKind::Info, format!("Copied {l}"));
+            self.toasts.push(ToastKind::Info, t!("toast-copied", what = l));
         }
     }
 
@@ -484,7 +505,7 @@ impl App {
         };
         if let (Some(id), Some(ctx)) = (id, &self.ctx) {
             ctx.copy_text(id.clone());
-            self.toasts.push(ToastKind::Info, format!("Copied {id}"));
+            self.toasts.push(ToastKind::Info, t!("toast-copied", what = id));
         }
     }
 
@@ -492,17 +513,17 @@ impl App {
 
     pub fn refresh_controls(&mut self, ui: &mut egui::Ui, age: Option<Duration>, loading: bool) {
         let paused = self.paused;
-        if ui.add(egui::Button::new(if paused { "▶" } else { "‖" }).small()).on_hover_text(if paused { "Resume auto-refresh (Ctrl+Shift+P)" } else { "Pause auto-refresh (Ctrl+Shift+P)" }).clicked() {
+        if ui.add(egui::Button::new(if paused { "▶" } else { "‖" }).small()).on_hover_text(if paused { t!("refresh-resume-tip") } else { t!("refresh-pause-tip") }).clicked() {
             self.paused = !self.paused;
         }
-        if ui.add(egui::Button::new("⟳").small()).on_hover_text("Refresh now (R / F5)").clicked() {
+        if ui.add(egui::Button::new("⟳").small()).on_hover_text(t!("refresh-now-tip")).clicked() {
             self.bump_refresh();
         }
         let txt = if loading {
-            "updating…".to_string()
+            t!("refresh-updating")
         } else {
             match age {
-                Some(a) => format!("updated {}", crate::util::human_duration(a)),
+                Some(a) => t!("refresh-updated", ago = crate::util::human_duration(a)),
                 None => String::new(),
             }
         };
@@ -521,11 +542,11 @@ impl App {
             move |c| async move { c.set_job_retries(&j, retries).await },
             move |app, r| match r {
                 Ok(()) => {
-                    app.toasts.push(ToastKind::Success, format!("Job retries set to {retries}"));
+                    app.toasts.push(ToastKind::Success, t!("toast-job-retries", n = retries));
                     app.bump_refresh();
                 }
                 Err(e) => {
-                    app.toasts.error("Could not set job retries", Some(e.to_string()));
+                    app.toasts.error(t!("toast-job-retries-failed"), Some(e.to_string()));
                 }
             },
         );
@@ -538,31 +559,35 @@ impl App {
             move |c| async move { c.set_external_task_retries(&j, retries).await },
             move |app, r| match r {
                 Ok(()) => {
-                    app.toasts.push(ToastKind::Success, format!("External task retries set to {retries}"));
+                    app.toasts.push(ToastKind::Success, t!("toast-external-retries", n = retries));
                     app.bump_refresh();
                 }
                 Err(e) => {
-                    app.toasts.error("Could not set external task retries", Some(e.to_string()));
+                    app.toasts.error(t!("toast-external-retries-failed"), Some(e.to_string()));
                 }
             },
         );
     }
 
     pub fn action_suspend_definition(&mut self, id: String, suspend: bool) {
-        let verb = if suspend { "Suspend" } else { "Activate" };
-        let body = format!("{verb} process definition {} including all its running instances?", crate::util::ellipsize(&id, 60));
-        self.confirm = Some(Confirm::new(format!("{verb} definition"), body, verb, move |app: &mut App| {
+        let short = crate::util::ellipsize(&id, 60);
+        let (title, body, verb) = if suspend {
+            (t!("definition-suspend-title"), t!("definition-suspend-body", id = short), t!("common-suspend"))
+        } else {
+            (t!("definition-activate-title"), t!("definition-activate-body", id = short), t!("common-activate"))
+        };
+        self.confirm = Some(Confirm::new(title, body, verb, move |app: &mut App| {
             let Some(net) = &app.net else { return };
             let i = id.clone();
             net.run(
                 move |c| async move { c.suspend_definition(&i, suspend, true).await },
                 move |app, r| match r {
                     Ok(()) => {
-                        app.toasts.push(ToastKind::Success, format!("Definition {}", if suspend { "suspended" } else { "activated" }));
+                        app.toasts.push(ToastKind::Success, if suspend { t!("toast-definition-suspended") } else { t!("toast-definition-activated") });
                         app.bump_refresh();
                     }
                     Err(e) => {
-                        app.toasts.error("Could not change suspension state", Some(e.to_string()));
+                        app.toasts.error(t!("toast-suspension-failed"), Some(e.to_string()));
                     }
                 },
             );
@@ -598,17 +623,17 @@ impl App {
                 // engine pill
                 let (color, text) = match &self.conn {
                     ConnStatus::Connected { version } => (tokens.completed, format!("● {}  ·  {}{}", self.profile.name, version, self.latency_ms.map(|l| format!("  ·  {l} ms")).unwrap_or_default())),
-                    ConnStatus::Connecting => (tokens.suspended, "● connecting…".to_string()),
+                    ConnStatus::Connecting => (tokens.suspended, format!("● {}", t!("status-connecting"))),
                     ConnStatus::Error(e) => (tokens.incident, format!("● {}", crate::util::ellipsize(e, 40))),
-                    ConnStatus::Disconnected => (tokens.fg2, "● offline".to_string()),
+                    ConnStatus::Disconnected => (tokens.fg2, format!("● {}", t!("status-offline"))),
                 };
                 let pill = ui.add(egui::Button::new(RichText::new(text).color(color).size(12.0)).frame(false));
                 egui::Popup::menu(&pill).show(|ui| {
                     ui.label(RichText::new(&self.profile.url).monospace().small());
-                    if ui.button("Refresh everything").clicked() {
+                    if ui.button(t!("topbar-refresh-everything")).clicked() {
                         self.bump_refresh();
                     }
-                    if ui.button("Disconnect").clicked() {
+                    if ui.button(t!("topbar-disconnect")).clicked() {
                         self.disconnect();
                     }
                 });
@@ -632,7 +657,7 @@ impl App {
                                     if label.middle_clicked() && self.tabs.len() > 1 {
                                         close = Some(i);
                                     }
-                                    if self.tabs.len() > 1 && ui.add(egui::Button::new(RichText::new("×").size(11.0)).frame(false)).on_hover_text("Close (Ctrl+W)").clicked() {
+                                    if self.tabs.len() > 1 && ui.add(egui::Button::new(RichText::new("×").size(11.0)).frame(false)).on_hover_text(t!("tab-close-tip")).clicked() {
                                         close = Some(i);
                                     }
                                 })
@@ -642,7 +667,7 @@ impl App {
                                 ui.painter().hline(rr.x_range(), rr.max.y + 1.0, egui::Stroke::new(2.0, tokens.accent));
                             }
                         }
-                        if ui.add(egui::Button::new("+").frame(false)).on_hover_text("New tab (Ctrl+T)").clicked() {
+                        if ui.add(egui::Button::new("+").frame(false)).on_hover_text(t!("tab-new-tip")).clicked() {
                             Cmd::NewTab.run(self);
                         }
                     });
@@ -654,14 +679,14 @@ impl App {
                     self.close_tab(i);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(egui::Button::new("?").frame(false)).on_hover_text("Shortcuts (?)").clicked() {
+                    if ui.add(egui::Button::new("?").frame(false)).on_hover_text(t!("topbar-shortcuts-tip")).clicked() {
                         self.help_open = !self.help_open;
                     }
                     let (mcp_color, mcp_text) = match &self.mcp {
                         Some(s) => (tokens.external, format!("MCP :{}", s.port)),
-                        None => (tokens.fg2, "MCP off".to_string()),
+                        None => (tokens.fg2, t!("topbar-mcp-off")),
                     };
-                    let mcp_btn = ui.add(egui::Button::new(RichText::new(mcp_text).color(mcp_color).size(12.0)).frame(false)).on_hover_text("Built-in MCP server for AI agents. Click to toggle.");
+                    let mcp_btn = ui.add(egui::Button::new(RichText::new(mcp_text).color(mcp_color).size(12.0)).frame(false)).on_hover_text(t!("topbar-mcp-tip"));
                     if mcp_btn.clicked() {
                         if self.mcp.is_some() {
                             self.stop_mcp();
@@ -672,27 +697,27 @@ impl App {
                         }
                         self.settings_dirty = true;
                     }
-                    if ui.add(egui::Button::new("⚙").frame(false)).on_hover_text("Settings (Ctrl+,)").clicked() {
+                    if ui.add(egui::Button::new("⚙").frame(false)).on_hover_text(t!("topbar-settings-tip")).clicked() {
                         self.open_settings();
                     }
-                    let theme_btn = ui.add(egui::Button::new(if self.tokens.dark { "☾" } else { "☀" }).frame(false)).on_hover_text("Theme: system / light / dark (Ctrl+Shift+T cycles)");
+                    let theme_btn = ui.add(egui::Button::new(if self.tokens.dark { "☾" } else { "☀" }).frame(false)).on_hover_text(t!("topbar-theme-tip"));
                     egui::Popup::menu(&theme_btn).show(|ui| {
-                        for (mode, label) in [(ThemeMode::System, "System"), (ThemeMode::Light, "Light"), (ThemeMode::Dark, "Dark")] {
+                        for (mode, label) in [(ThemeMode::System, t!("theme-system")), (ThemeMode::Light, t!("theme-light")), (ThemeMode::Dark, t!("theme-dark"))] {
                             if ui.selectable_label(self.theme_mode() == mode, label).clicked() {
                                 self.set_theme_mode(mode);
                             }
                         }
                     });
-                    let search = egui::Button::new(RichText::new("🔍  Search or jump…   Ctrl+K").color(tokens.fg1)).fill(tokens.bg2).min_size(egui::Vec2::new(200.0, 24.0));
+                    let search = egui::Button::new(RichText::new(format!("🔍  {}   Ctrl+K", t!("topbar-search"))).color(tokens.fg1)).fill(tokens.bg2).min_size(egui::Vec2::new(200.0, 24.0));
                     if ui.add(search).clicked() {
                         self.palette.open();
                     }
                     // back / forward
                     let (cb, cf) = self.tabs.get(self.active).map(|t| (t.can_back(), t.can_forward())).unwrap_or((false, false));
-                    if ui.add_enabled(cf, egui::Button::new("→").frame(false)).on_hover_text("Forward (Alt+→)").clicked() {
+                    if ui.add_enabled(cf, egui::Button::new("→").frame(false)).on_hover_text(t!("nav-forward-tip")).clicked() {
                         Cmd::Forward.run(self);
                     }
-                    if ui.add_enabled(cb, egui::Button::new("←").frame(false)).on_hover_text("Back (Alt+←)").clicked() {
+                    if ui.add_enabled(cb, egui::Button::new("←").frame(false)).on_hover_text(t!("nav-back-tip")).clicked() {
                         Cmd::Back.run(self);
                     }
                 });
@@ -709,12 +734,12 @@ impl App {
                     let inflight = self.net.as_ref().map(|n| n.in_flight()).unwrap_or(0);
                     if inflight > 0 {
                         ui.spinner();
-                        ui.label(RichText::new(format!("{inflight} request{}", if inflight == 1 { "" } else { "s" })).weak().small());
+                        ui.label(RichText::new(t!("status-requests", n = inflight)).weak().small());
                     }
                     if self.paused {
-                        ui.label(RichText::new("auto-refresh paused").color(tokens.suspended).small());
+                        ui.label(RichText::new(t!("status-paused")).color(tokens.suspended).small());
                     } else if self.settings.pause_when_unfocused && !self.window_focused {
-                        ui.label(RichText::new("refresh paused while unfocused").weak().small());
+                        ui.label(RichText::new(t!("status-paused-unfocused")).weak().small());
                     }
                 });
             });
@@ -794,18 +819,19 @@ impl App {
         let details = issues.iter().map(|i| i.describe()).collect::<Vec<_>>().join("\n");
         let n = issues.len();
         let fix_list = issues.clone();
+        let fix_label = t!("perms-fix");
         self.toasts.push_with_action(
             ToastKind::Warning,
-            format!("Settings {} readable by other users ({n} path{}). Saved passwords should be private.", if n == 1 { "file is" } else { "files are" }, if n == 1 { "" } else { "s" }),
+            t!("perms-warning", n = n),
             Some(details),
-            "Fix permissions",
+            &fix_label,
             Some(Box::new(move |app: &mut App| {
                 let failed = crate::settings::perms::fix(&fix_list);
                 if failed.is_empty() {
-                    app.toasts.push(ToastKind::Success, "Settings directory is now private (700 / 600)");
+                    app.toasts.push(ToastKind::Success, t!("perms-fixed"));
                 } else {
                     let d = failed.iter().map(|(i, e)| format!("{}: {e}", i.path.display())).collect::<Vec<_>>().join("\n");
-                    app.toasts.error("Some permissions could not be changed", Some(d));
+                    app.toasts.error(t!("perms-fix-failed"), Some(d));
                 }
             })),
         );
@@ -1002,34 +1028,34 @@ pub fn diagram_context_menu(ui: &mut egui::Ui, model: &Model, target: Option<bpm
             ui.label(RichText::new(e.display_name()).strong());
             ui.label(RichText::new(&e.id).monospace().small().weak());
             ui.separator();
-            if ui.button("Inspect                Enter").clicked() {
+            if ui.button(format!("{:<22} Enter", t!("ctx-inspect"))).clicked() {
                 actions.push(A::Select(bpmn::Ref::Element(i)));
                 ui.close();
             }
-            if ui.button("Copy id                Ctrl+C").clicked() {
+            if ui.button(format!("{:<22} Ctrl+C", t!("ctx-copy-id"))).clicked() {
                 ui.ctx().copy_text(e.id.clone());
                 ui.close();
             }
             if let Some(n) = &e.name {
-                if ui.button("Copy name").clicked() {
+                if ui.button(t!("ctx-copy-name")).clicked() {
                     ui.ctx().copy_text(n.clone());
                     ui.close();
                 }
             }
             if e.kind.is_flow_node() {
                 ui.separator();
-                if ui.button("Instances waiting here").clicked() {
+                if ui.button(t!("ctx-instances-waiting")).clicked() {
                     actions.push(A::InstancesAt(e.id.clone()));
                     ui.close();
                 }
-                if ui.button("Instances that executed this…").clicked() {
+                if ui.button(t!("ctx-instances-executed")).clicked() {
                     actions.push(A::ExecutedAt(e.id.clone()));
                     ui.close();
                 }
             }
             if e.kind == bpmn::ElementKind::CallActivity {
                 if let Some(k) = e.attr("calledElement") {
-                    if ui.button(format!("Open called process {k}")).clicked() {
+                    if ui.button(t!("ctx-open-called", key = k)).clicked() {
                         actions.push(A::OpenDefinitionKey(k.to_string()));
                         ui.close();
                     }
@@ -1039,30 +1065,30 @@ pub fn diagram_context_menu(ui: &mut egui::Ui, model: &Model, target: Option<bpm
         Some(bpmn::Ref::Flow(i)) => {
             let f = &model.flows[i];
             ui.label(RichText::new(f.display_name()).strong());
-            if ui.button("Inspect").clicked() {
+            if ui.button(t!("ctx-inspect")).clicked() {
                 actions.push(A::Select(bpmn::Ref::Flow(i)));
                 ui.close();
             }
-            if ui.button("Copy id").clicked() {
+            if ui.button(t!("ctx-copy-id")).clicked() {
                 ui.ctx().copy_text(f.id.clone());
                 ui.close();
             }
             if let Some(s) = f.source {
-                if ui.button(format!("Go to source: {}", crate::util::ellipsize(model.elements[s].display_name(), 30))).clicked() {
+                if ui.button(t!("ctx-go-source", name = crate::util::ellipsize(model.elements[s].display_name(), 30))).clicked() {
                     actions.push(A::Select(bpmn::Ref::Element(s)));
                     ui.close();
                 }
             }
             if let Some(t) = f.target {
-                if ui.button(format!("Go to target: {}", crate::util::ellipsize(model.elements[t].display_name(), 30))).clicked() {
+                if ui.button(t!("ctx-go-target", name = crate::util::ellipsize(model.elements[t].display_name(), 30))).clicked() {
                     actions.push(A::Select(bpmn::Ref::Element(t)));
                     ui.close();
                 }
             }
         }
         None => {
-            ui.label(RichText::new("Diagram").weak());
-            if ui.button("Fit diagram            0").clicked() {
+            ui.label(RichText::new(t!("ctx-diagram")).weak());
+            if ui.button(format!("{:<22} 0", t!("ctx-fit-diagram"))).clicked() {
                 actions.push(A::Select(bpmn::Ref::Element(usize::MAX)));
                 ui.close();
             }

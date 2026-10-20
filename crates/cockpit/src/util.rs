@@ -48,27 +48,27 @@ pub fn relative_from_now(t: DateTime<Utc>) -> String {
     let (past, a) = if secs >= 0 { (true, secs) } else { (false, -secs) };
     let body = human_secs(a);
     if past {
-        format!("{body} ago")
+        crate::t!("time-ago", d = body)
     } else {
-        format!("in {body}")
+        crate::t!("time-in", d = body)
     }
 }
 
 pub fn human_secs(a: i64) -> String {
     if a < 60 {
-        format!("{a} s")
+        crate::t!("dur-s", s = a)
     } else if a < 3600 {
-        format!("{} m {} s", a / 60, a % 60)
+        crate::t!("dur-m-s", m = a / 60, s = a % 60)
     } else if a < 86400 {
-        format!("{} h {} m", a / 3600, (a % 3600) / 60)
+        crate::t!("dur-h-m", h = a / 3600, m = (a % 3600) / 60)
     } else {
-        format!("{} d {} h", a / 86400, (a % 86400) / 3600)
+        crate::t!("dur-d-h", d = a / 86400, h = (a % 86400) / 3600)
     }
 }
 
 pub fn human_millis(ms: i64) -> String {
     if ms < 1000 {
-        format!("{ms} ms")
+        crate::t!("dur-ms", ms = ms)
     } else {
         human_secs(ms / 1000)
     }
@@ -77,9 +77,9 @@ pub fn human_millis(ms: i64) -> String {
 pub fn human_duration(d: std::time::Duration) -> String {
     let s = d.as_secs();
     if s < 1 {
-        "just now".into()
+        crate::t!("time-just-now")
     } else {
-        format!("{} ago", human_secs(s as i64))
+        crate::t!("time-ago", d = human_secs(s as i64))
     }
 }
 
@@ -119,7 +119,16 @@ mod tests {
         assert!(parse_time("2026-10-20T09:48:00.854+0300").is_some());
         assert!(parse_time("2026-10-20T09:48:00+03:00").is_some());
         assert!(parse_time("2026-10-20T06:48:00Z").is_some());
+        // Durations are translated; with the English pack loaded the classic form comes out.
+        // The active pack is process-global, so tests that swap it serialise on TEST_LOCK.
+        let _guard = crate::i18n::TEST_LOCK.lock().unwrap();
+        let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../locales"));
+        crate::i18n::load(&[dir], "en-US");
         assert_eq!(human_secs(7384), "2 h 3 m");
+        // Two clock reads happen between here and the formatter, so stay away from unit edges.
+        assert_eq!(relative_from_now(Utc::now() + chrono::Duration::milliseconds(61_500)), "in 1 m 1 s");
+        assert_eq!(relative_from_now(Utc::now() - chrono::Duration::milliseconds(3_500)), "3 s ago");
+        assert_eq!(human_duration(std::time::Duration::from_secs(0)), "just now");
         assert!(is_uuid("30f8285a-cc52-11f1-8f3a-c6104db61f7c"));
         assert!(!is_uuid("ORD-1001"));
     }

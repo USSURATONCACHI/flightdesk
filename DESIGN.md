@@ -613,3 +613,17 @@ Design rules:
   never steal the user's focus.
 - *Native first, wasm later.* Native gets the smoothest input and no CORS games; the code
   stays wasm-compatible (no blocking I/O on the UI thread, `reqwest` with the wasm feature).
+
+## Localisation
+
+UI text comes from Fluent language packs (`locales/<tag>.ftl`); nothing is compiled in. The
+binary resolves the search path (`--locale-dir` / `FLIGHTDECK_LOCALE_DIR`, else user config and
+data dirs, `$XDG_DATA_DIRS/flightdeck/locales`, and next to the executable) and hands it to the
+app, which discovers packs, picks one (`Settings → Language`: system or explicit; system matches
+the OS locale by full tag, then by language, then English) and activates it. Lookups fall back to
+English, then to the message id. Labels that come from the model crate as English constants
+(element kinds, key/value row labels, section titles, dock tabs, table columns) are mapped through
+slug-based ids (`bpmn-user-task`, `kv-business-key`, `section-identity`, `dock-inspector`,
+`col-started`) so adding a pack never requires code changes. Tests enforce that every id used in
+code exists in `en-US.ftl` and that all shipped packs define the same ids. MCP tool output stays
+English.
