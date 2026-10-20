@@ -84,7 +84,8 @@ uses Xwayland to place test windows on the second monitor).
 | Keys | Action |
 |---|---|
 | Wheel / pinch, Shift+wheel | zoom at cursor, pan horizontally |
-| Drag, middle-drag, Space+drag | pan (flick for inertia; hold Alt to pan twice as fast; the pointer wraps at the view edge so a drag never runs out of room) |
+| Alt (hold) | pan and zoom twice as fast (a small badge orbits the cursor while active) |
+| Drag, middle-drag, Space+drag | pan (flick for inertia; the pointer wraps at the view edge so a drag never runs out of room) |
 | Zoom dial (bottom left) | drag left/right to zoom without limit; wheel over it zooms too |
 | ↑↓←→ · WASD · HJKL | pan (hold to accelerate, Shift faster) |
 | `+` `−` · `0` · `1` · `F` · `Shift+F` | zoom · fit all · 100 % · fit selection · fit tokens |

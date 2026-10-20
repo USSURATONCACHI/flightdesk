@@ -96,3 +96,62 @@ fn theme_picker_flow(render: bool) {
         }
     }
 }
+
+/// Alt doubles the wheel zoom and shows the orbiting badge. The rendered frame is written to
+/// `FLIGHTDECK_TEST_OUT` when set, for eyeballing.
+#[test]
+fn alt_doubles_wheel_zoom_and_renders_badge() {
+    use egui::{Event, Modifiers, MouseWheelUnit, Pos2, Vec2};
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn");
+    let zoom_after = |alt: bool| -> (f32, Option<image::RgbaImage>) {
+        let ctx = egui::Context::default();
+        let mut app = App::new(&ctx, Settings::default(), 1.0);
+        app.offline = true;
+        app.navigate(cockpit::state::Nav::File { path: fixture.into() }, cockpit::state::NavMode::NewTab);
+        let mut builder = Harness::builder().with_size(egui::Vec2::new(1200.0, 800.0)).allow_missing_glyphs();
+        if alt {
+            builder = builder.wgpu();
+        }
+        let mut harness = builder.build_ui_state(|ui, app: &mut App| app.frame(ui), app);
+        harness.run_steps(4);
+        let canvas = Pos2::new(400.0, 400.0);
+        harness.hover_at(canvas);
+        harness.step();
+        let mods = if alt { Modifiers::ALT } else { Modifiers::NONE };
+        harness.input_mut().events.push(Event::ModifiersChanged(mods));
+        harness.input_mut().events.push(Event::MouseWheel { unit: MouseWheelUnit::Point, delta: Vec2::new(0.0, 120.0), phase: egui::TouchPhase::Move, source: egui::MouseWheelSource::Wheel, modifiers: mods });
+        harness.step();
+        // let the camera settle while Alt stays held
+        for _ in 0..40 {
+            harness.step();
+        }
+        let img = if alt { harness.render().ok() } else { None };
+        let z = match harness.state().tabs[0].place() {
+            cockpit::state::Place::File(p) => p.view.camera.target.zoom,
+            _ => panic!("file place expected"),
+        };
+        (z, img)
+    };
+    let (z_plain, _) = zoom_after(false);
+    let (z_alt, img) = zoom_after(true);
+    // both start from the same fitted zoom; compare the applied factors in log space
+    let base = {
+        let ctx = egui::Context::default();
+        let mut app = App::new(&ctx, Settings::default(), 1.0);
+        app.offline = true;
+        app.navigate(cockpit::state::Nav::File { path: fixture.into() }, cockpit::state::NavMode::NewTab);
+        let mut h = Harness::builder().with_size(egui::Vec2::new(1200.0, 800.0)).allow_missing_glyphs().build_ui_state(|ui, app: &mut App| app.frame(ui), app);
+        h.run_steps(4);
+        match h.state().tabs[0].place() {
+            cockpit::state::Place::File(p) => p.view.camera.target.zoom,
+            _ => unreachable!(),
+        }
+    };
+    let f_plain = (z_plain / base).ln();
+    let f_alt = (z_alt / base).ln();
+    assert!(f_plain > 0.05, "a wheel tick zooms in: {f_plain}");
+    assert!((f_alt / f_plain - 2.0).abs() < 0.05, "Alt doubles the zoom rate: {f_alt} vs {f_plain}");
+    if let (Some(img), Ok(dir)) = (img, std::env::var("FLIGHTDECK_TEST_OUT")) {
+        img.save(format!("{dir}/alt_badge.png")).unwrap();
+    }
+}

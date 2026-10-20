@@ -418,6 +418,7 @@ pub fn help_overlay(ctx: &egui::Context, app: &mut App) {
             egui::Grid::new("help-diagram").num_columns(2).spacing([16.0, 3.0]).show(left, |ui| {
                 for (k, v) in [
                     ("Wheel / pinch", "zoom at cursor"),
+                    ("Alt (hold)", "everything twice as fast: pan, zoom, dial"),
                     ("Shift+wheel", "pan horizontally"),
                     ("Drag, middle-drag, Space+drag", "pan (flick for inertia)"),
                     ("↑↓←→  WASD  HJKL", "pan (hold to accelerate, Shift faster)"),

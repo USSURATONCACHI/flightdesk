@@ -5,7 +5,7 @@ use super::camera::Camera;
 use super::hit::hit_test;
 use super::render::{BadgeHit, BadgeKind, DiagramStyle, Overlays, Renderer};
 use bpmn::{ElementKind, Model, Ref};
-use egui::{Align2, CornerRadius, CursorIcon, FontId, Id, Key, Modifiers, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
+use egui::{Align2, Color32, CornerRadius, CursorIcon, FontId, Id, Key, Modifiers, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2};
 use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -292,25 +292,27 @@ fn show_impl(
     let keys_allowed = (view.focused || hovered) && !text_focus && !view.find_bar_has_focus(&ctx);
 
     // ---- wheel / pinch ----
+    // Alt doubles every movement: pan, wheel/pinch zoom, key zoom and the dial.
+    let boost = if ctx.input(|i| i.modifiers.alt) { 2.0 } else { 1.0 };
     if hovered {
         let (scroll, zoom_delta, mods) = ctx.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.modifiers));
         let anchor = pointer.unwrap_or(rect.center());
         if zoom_delta != 1.0 {
-            view.camera.zoom_by(rect, zoom_delta, anchor);
+            view.camera.zoom_by(rect, zoom_delta.powf(boost), anchor);
         }
         if scroll != Vec2::ZERO {
             let wheel_zoom = settings.wheel_zooms != mods.ctrl;
             if mods.shift {
                 // horizontal pan (egui already maps shift+wheel to x)
-                view.camera.pan_screen(Vec2::new(if scroll.x != 0.0 { scroll.x } else { scroll.y }, 0.0));
+                view.camera.pan_screen(Vec2::new(if scroll.x != 0.0 { scroll.x } else { scroll.y }, 0.0) * boost);
             } else if wheel_zoom && scroll.y != 0.0 {
-                let factor = (scroll.y * 0.0018).exp();
+                let factor = (scroll.y * 0.0018 * boost).exp();
                 view.camera.zoom_by(rect, factor, anchor);
                 if scroll.x != 0.0 {
-                    view.camera.pan_screen(Vec2::new(scroll.x, 0.0));
+                    view.camera.pan_screen(Vec2::new(scroll.x, 0.0) * boost);
                 }
             } else {
-                view.camera.pan_screen(scroll);
+                view.camera.pan_screen(scroll * boost);
             }
         }
     }
@@ -323,8 +325,6 @@ fn show_impl(
         view.pan_wrap.begin(settings.wrap);
     }
     if primary_drag || middle_drag {
-        // Alt doubles the pan speed: the board moves twice as far as the cursor.
-        let boost = if ctx.input(|i| i.modifiers.alt) { 2.0 } else { 1.0 };
         let d = view.pan_wrap.delta(&ctx, response.drag_delta(), pointer, rect, (true, true)) * boost;
         view.camera.drag_screen(d);
         let dtt = (now - view.last_drag_time).max(1e-3) as f32;
@@ -516,6 +516,8 @@ fn show_impl(
         }
     }
 
+    alt_badge(&ctx, view, style, rect, hovered || response.dragged(), pointer);
+
     // context menu
     let target = view.context_target;
     response.context_menu(|ui| context_menu(ui, target));
@@ -587,8 +589,14 @@ fn handle_keys(ctx: &egui::Context, view: &mut DiagramView, model: &Model, setti
         if i.consume_key(Modifiers::NONE, Key::Plus) || i.consume_key(Modifiers::NONE, Key::Equals) || i.consume_key(Modifiers::SHIFT, Key::Equals) || i.consume_key(Modifiers::SHIFT, Key::Plus) {
             view.camera.zoom_by(rect, step, anchor);
         }
+        if i.consume_key(Modifiers::ALT, Key::Plus) || i.consume_key(Modifiers::ALT, Key::Equals) || i.consume_key(Modifiers::ALT.plus(Modifiers::SHIFT), Key::Equals) {
+            view.camera.zoom_by(rect, step * step, anchor);
+        }
         if i.consume_key(Modifiers::NONE, Key::Minus) {
             view.camera.zoom_by(rect, 1.0 / step, anchor);
+        }
+        if i.consume_key(Modifiers::ALT, Key::Minus) {
+            view.camera.zoom_by(rect, 1.0 / (step * step), anchor);
         }
         if i.consume_key(Modifiers::NONE, Key::Num0) {
             view.needs_fit = true;
@@ -891,7 +899,8 @@ fn zoom_dial(ui: &mut Ui, view: &mut DiagramView, dial: Rect, viewport: Rect, st
         let pointer = ctx.input(|i| i.pointer.hover_pos());
         let d = view.dial_wrap.delta(&ctx, resp.drag_delta(), pointer, dial.expand2(Vec2::new(0.0, 40.0)), (true, false));
         if d.x != 0.0 {
-            view.camera.zoom_by(viewport, (d.x / PX_PER_OCTAVE).exp2(), anchor);
+            let boost = if ctx.input(|i| i.modifiers.alt) { 2.0 } else { 1.0 };
+            view.camera.zoom_by(viewport, (d.x * boost / PX_PER_OCTAVE).exp2(), anchor);
         }
         ctx.set_cursor_icon(CursorIcon::ResizeHorizontal);
     } else if resp.drag_stopped() {
@@ -1019,3 +1028,29 @@ pub fn implementation_summary(e: &bpmn::Element) -> Option<String> {
 }
 
 use super::render::blend;
+
+/// A small "Alt ×2" pill that fades in and slowly orbits the cursor while Alt is held over the
+/// diagram, so the doubled speed is never a surprise.
+fn alt_badge(ctx: &egui::Context, view: &DiagramView, style: &DiagramStyle, rect: Rect, over_canvas: bool, pointer: Option<Pos2>) {
+    let alt = ctx.input(|i| i.modifiers.alt) && over_canvas && pointer.is_some();
+    let t = ctx.animate_bool_with_time(view.id.with("alt-badge"), alt, 0.18);
+    if t <= 0.0 {
+        return;
+    }
+    let Some(p) = pointer else { return };
+    ctx.request_repaint(); // keep orbiting
+    let time = ctx.input(|i| i.time) as f32;
+    let eased = 1.0 - (1.0 - t) * (1.0 - t);
+    let radius = 30.0 - 10.0 * eased; // settles from 30 px to 20 px
+    let angle = time * 1.1; // ~10 s per orbit, counter-clockwise
+    let center = p + Vec2::angled(-angle) * radius;
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, view.id.with("alt-badge-layer"))).with_clip_rect(rect);
+    let font = FontId::proportional(10.5);
+    let galley = painter.layout_no_wrap("Alt ×2".to_string(), font, style.badge_text);
+    let size = galley.size() + Vec2::new(12.0, 6.0);
+    let pill = Rect::from_center_size(center, size);
+    let fill = style.selection.gamma_multiply(0.92 * eased);
+    painter.rect_filled(pill.expand(1.5), 9.0, Color32::from_black_alpha((40.0 * eased) as u8));
+    painter.rect_filled(pill, 8.0, fill);
+    painter.galley(pill.center() - galley.size() / 2.0, galley, style.badge_text.gamma_multiply(eased));
+}
