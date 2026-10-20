@@ -57,12 +57,13 @@ pub struct Overlays {
     pub timers: HashMap<String, (String, bool)>,
     /// Heat 0..1 per activity id.
     pub heat: HashMap<String, f32>,
-    pub matches: HashSet<Ref>,
-    /// Elements where a *running instance* matched the find query (business key / id).
-    pub instance_matches: HashSet<Ref>,
+    /// Find matches with their highlight strength 0..1 (animated in/out by the widget).
+    pub matches: HashMap<Ref, f32>,
+    /// Elements where a *running instance* matched the find query (business key / id), 0..1.
+    pub instance_matches: HashMap<Ref, f32>,
     pub current_match: Option<Ref>,
-    /// When true, everything not matched is dimmed.
-    pub dim_unmatched: bool,
+    /// 0..1: how strongly everything not matched is dimmed.
+    pub dim_unmatched: f32,
     pub selection: Option<Ref>,
     pub multi_selection: HashSet<usize>,
     pub hover: Option<Ref>,
@@ -147,12 +148,20 @@ impl<'a> Renderer<'a> {
         r.is_valid() && r.x <= self.visible.max.x && r.x + r.w >= self.visible.min.x && r.y <= self.visible.max.y && r.y + r.h >= self.visible.min.y
     }
 
+    /// Highlight strengths (element match, instance match) for a reference, 0 when absent.
+    fn match_strength(&self, r: Ref) -> (f32, f32) {
+        (self.overlays.matches.get(&r).copied().unwrap_or(0.0), self.overlays.instance_matches.get(&r).copied().unwrap_or(0.0))
+    }
+
     fn alpha_for(&self, r: Ref) -> f32 {
-        if self.overlays.dim_unmatched && !self.overlays.matches.contains(&r) && !self.overlays.instance_matches.contains(&r) {
-            0.22
-        } else {
-            1.0
+        let dim = self.overlays.dim_unmatched;
+        if dim <= 0.0 {
+            return 1.0;
         }
+        let (a, b) = self.match_strength(r);
+        let matched = a.max(b);
+        // Fully dimmed = 0.22; a (partially) matched element is lifted back towards 1.
+        1.0 - dim * (1.0 - matched) * 0.78
     }
 
     fn element_colors(&self, idx: usize, e: &Element) -> (Color32, Color32, Color32) {
@@ -533,9 +542,11 @@ impl<'a> Renderer<'a> {
             color = st.hover;
             width *= 1.4;
         }
-        if self.overlays.matches.contains(&Ref::Flow(fi)) {
-            color = if self.overlays.current_match == Some(Ref::Flow(fi)) { st.current_match } else { st.matched };
-            width *= 1.5;
+        let (t, _) = self.match_strength(Ref::Flow(fi));
+        if t > 0.0 {
+            let target = if self.overlays.current_match == Some(Ref::Flow(fi)) { st.current_match } else { st.matched };
+            color = blend(color, target, t);
+            width *= 1.0 + 0.5 * t;
         }
         let color = color.gamma_multiply(a);
         let pts: Vec<Pos2> = f.waypoints.iter().map(|p| self.ws(*p)).collect();
@@ -599,19 +610,29 @@ impl<'a> Renderer<'a> {
         } else if self.overlays.related.contains(&rref) {
             ring = Some((st.hover.gamma_multiply(0.6), 2.0));
         }
-        let el_match = self.overlays.matches.contains(&rref);
-        let inst_match = self.overlays.instance_matches.contains(&rref);
-        let cur = self.overlays.current_match == Some(rref);
-        if el_match && inst_match {
-            // Both the element and a running instance on it match: alternating stripes.
-            let w = if cur { 6.0 } else { 5.0 };
-            let (a, b) = (if cur { st.current_match } else { st.matched }, st.external);
-            self.striped_ring(e, r, w, a, b);
+        let (ta, tb) = self.match_strength(rref);
+        if ta > 0.0 || tb > 0.0 {
+            // Find highlights (possibly mid-fade) replace the hover/selection ring.
             ring = None;
-        } else if inst_match {
-            ring = Some((if cur { st.current_match } else { st.external }, if cur { 4.0 } else { 2.5 }));
-        } else if el_match {
-            ring = Some((if cur { st.current_match } else { st.matched }, if cur { 4.0 } else { 2.5 }));
+            let cur = self.overlays.current_match == Some(rref);
+            let both = ta.min(tb);
+            let w = egui::lerp(if cur { 2.5..=4.0 } else { 2.5..=5.0 }, both).max(if cur { 4.0 } else { 2.5 });
+            let a_col = if cur { st.current_match } else { st.matched };
+            let b_col = if cur && ta < 0.5 { st.current_match } else { st.external };
+            // Layering that is exact at the corners and smooth in between:
+            //   instance only   -> solid b
+            //   element only    -> solid a
+            //   both            -> solid b with a diagonal hatch of a (stripes)
+            if tb > 0.0 {
+                self.solid_ring(e, r, w, b_col.gamma_multiply(tb));
+            }
+            let a_solid = ta * (1.0 - tb);
+            if a_solid > 0.0 {
+                self.solid_ring(e, r, w, a_col.gamma_multiply(a_solid));
+            }
+            if ta * tb > 0.0 {
+                self.hatch_ring(e, r, w, a_col.gamma_multiply(ta * tb));
+            }
         }
         if let Some((color, w)) = ring {
             let pad = w + 2.0;
@@ -675,27 +696,35 @@ impl<'a> Renderer<'a> {
         rect
     }
 
-    /// Highlight ring in two alternating colours: diagonal hatching on rectangular elements,
-    /// alternating arcs on circles and diamonds.
-    fn striped_ring(&self, e: &Element, r: Rect, w: f32, a: Color32, b: Color32) {
+    /// Solid highlight ring following the element's silhouette.
+    fn solid_ring(&self, e: &Element, r: Rect, w: f32, color: Color32) {
+        let pad = w + 2.0;
+        if e.kind.is_event() {
+            self.painter.circle_stroke(r.center(), r.width() / 2.0 + pad, Stroke::new(w, color));
+        } else if e.kind.is_gateway() {
+            self.diamond(r.expand(pad), Color32::TRANSPARENT, Stroke::new(w, color));
+        } else {
+            self.painter.rect_stroke(r.expand(pad), self.px(10.0) + pad, Stroke::new(w, color), StrokeKind::Middle);
+        }
+    }
+
+    /// Second colour of a striped ring: diagonal hatching on rectangular elements, alternating
+    /// arcs on circles and diamonds. Painted over `solid_ring` of the first colour.
+    fn hatch_ring(&self, e: &Element, r: Rect, w: f32, b: Color32) {
         let pad = w + 2.0;
         if e.kind.is_event() {
             let c = r.center();
             let rad = r.width() / 2.0 + pad;
-            self.painter.circle_stroke(c, rad, Stroke::new(w, a));
             let pts: Vec<Pos2> = (0..=96).map(|i| c + Vec2::angled(std::f32::consts::TAU * i as f32 / 96.0) * rad).collect();
             self.painter.add(Shape::dashed_line(&pts, Stroke::new(w, b), 7.0, 7.0));
         } else if e.kind.is_gateway() {
             let rr = r.expand(pad);
             let c = rr.center();
             let pts = vec![Pos2::new(c.x, rr.min.y), Pos2::new(rr.max.x, c.y), Pos2::new(c.x, rr.max.y), Pos2::new(rr.min.x, c.y), Pos2::new(c.x, rr.min.y)];
-            self.painter.add(Shape::line(pts.clone(), PathStroke::from(Stroke::new(w, a))));
             self.painter.add(Shape::dashed_line(&pts, Stroke::new(w, b), 7.0, 7.0));
         } else {
             let rr = r.expand(pad);
-            let cr = self.px(10.0) + pad;
-            self.painter.rect_stroke(rr, cr, Stroke::new(w, a), StrokeKind::Middle);
-            // Diagonal hatch in colour b, clipped to the four border strips of the ring.
+            // Diagonal hatch clipped to the four border strips of the ring.
             let outer = rr.expand(w / 2.0);
             let inner = rr.shrink(w / 2.0);
             let strips = [

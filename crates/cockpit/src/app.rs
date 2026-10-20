@@ -371,6 +371,16 @@ impl App {
         self.pending_nav.push((nav, mode));
     }
 
+    /// Settings never replace what you were looking at: switch to an existing settings tab, or
+    /// open one.
+    pub fn open_settings(&mut self) {
+        if let Some(i) = self.tabs.iter().position(|t| matches!(t.place(), Place::Settings(_))) {
+            self.active = i;
+        } else {
+            self.navigate(Nav::Settings, NavMode::NewTab);
+        }
+    }
+
     fn build_place(&mut self, nav: Nav) -> Option<Place> {
         Some(match nav {
             Nav::Definitions => Place::Definitions(DefinitionsPlace::default()),
@@ -663,7 +673,7 @@ impl App {
                         self.settings_dirty = true;
                     }
                     if ui.add(egui::Button::new("⚙").frame(false)).on_hover_text("Settings (Ctrl+,)").clicked() {
-                        self.navigate(Nav::Settings, NavMode::Here);
+                        self.open_settings();
                     }
                     let theme_btn = ui.add(egui::Button::new(if self.tokens.dark { "☾" } else { "☀" }).frame(false)).on_hover_text("Theme: system / light / dark (Ctrl+Shift+T cycles)");
                     egui::Popup::menu(&theme_btn).show(|ui| {

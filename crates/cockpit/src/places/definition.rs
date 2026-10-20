@@ -102,6 +102,9 @@ impl DefinitionPlace {
         }
         if self.stats.poll() {
             self.rebuild_overlays();
+            // Tokens moved (or may have): refresh the instance search on the same beat so the
+            // find highlights follow the "(n)" badges.
+            self.find_hits.invalidate();
         }
         if let Some(d) = &self.def.data {
             if self.versions.stale(Duration::from_secs(30)) && due(self.versions.age()) {
@@ -135,12 +138,12 @@ impl DefinitionPlace {
             net.fetch(&mut self.incidents, move |c| async move { c.incidents(&[("processDefinitionId", id2)]).await });
         }
         self.incidents.poll();
-        self.poll_find_instances(app);
+        self.poll_find_instances(app, refresh, auto);
     }
 
-    /// Ctrl+F instance search: debounced, one pass over the definition's running activity
-    /// instances plus a business-key query, joined client-side.
-    fn poll_find_instances(&mut self, app: &App) {
+    /// Ctrl+F instance search: debounced on typing, then kept live: re-run whenever fresh
+    /// activity statistics arrive and, as a fallback, on the list refresh cadence.
+    fn poll_find_instances(&mut self, app: &App, refresh: Duration, auto: bool) {
         let enabled = app.settings.find_instances && (app.settings.find_business_keys || app.settings.find_ids);
         self.view.find.instances_enabled = enabled;
         let query = self.view.find.query.trim().to_string();
@@ -158,9 +161,23 @@ impl DefinitionPlace {
             self.find_changed_at = Some(std::time::Instant::now());
             self.view.find.instance_hits_loading = true;
         }
-        if let (Some(t), Some(net)) = (self.find_changed_at, app.net.as_ref()) {
-            if t.elapsed() >= Duration::from_millis(250) {
-                self.find_changed_at = None;
+        if let Some(net) = app.net.as_ref() {
+            let typed = match self.find_changed_at {
+                Some(t) if t.elapsed() >= Duration::from_millis(250) => {
+                    self.find_changed_at = None;
+                    true
+                }
+                Some(_) => {
+                    if let Some(ctx) = &app.ctx {
+                        ctx.request_repaint_after(Duration::from_millis(60));
+                    }
+                    false
+                }
+                None => false,
+            };
+            // Live follow-up: statistics arrived (`invalidate`) or the data aged out.
+            let live = self.find_changed_at.is_none() && self.find_hits.stale(refresh) && (self.find_hits.age().is_none() || auto);
+            if (typed || live) && !self.find_hits.is_loading() {
                 let def = self.def_id.clone();
                 let opts = crate::history::FindInstanceOptions { business_keys: app.settings.find_business_keys, ids: app.settings.find_ids };
                 let q = query.clone();
@@ -169,14 +186,16 @@ impl DefinitionPlace {
                     let by_key = if opts.business_keys { c.instances_by_business_key_fragment(&def, &q).await.unwrap_or_default() } else { vec![] };
                     Ok(crate::history::instance_hits(&acts, &by_key, &q, opts))
                 });
-            } else if let Some(ctx) = &app.ctx {
-                ctx.request_repaint_after(Duration::from_millis(60));
             }
         }
         if self.find_hits.poll() {
-            self.view.find.instance_hits = self.find_hits.data.clone().unwrap_or_default();
+            let hits = self.find_hits.data.clone().unwrap_or_default();
+            if hits != self.view.find.instance_hits {
+                self.view.find.instance_hits = hits;
+            }
         }
-        self.view.find.instance_hits_loading = self.find_changed_at.is_some() || self.find_hits.is_loading();
+        // Only the first load of a query shows the spinner; background refreshes are silent.
+        self.view.find.instance_hits_loading = self.find_changed_at.is_some() || (self.find_hits.is_loading() && self.find_hits.data.is_none());
     }
 
     fn instance_query(&self, app: &App) -> HistoricProcessInstanceQuery {

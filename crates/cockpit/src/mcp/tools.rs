@@ -284,7 +284,7 @@ fn diagram_json_model(view: &crate::viewport::DiagramView, m: &bpmn::Model) -> V
         "loaded": true, "elements": m.flow_nodes().count(), "flows": m.flows.len(),
         "selection": sel, "zoom": view.camera.target.zoom, "center": [view.camera.target.center.x, view.camera.target.center.y],
         "camera_animating": view.camera.is_animating(),
-        "find": if view.find.open { json!({"query": view.find.query, "matches": view.find.matches.len(), "current": view.find.cursor}) } else { Value::Null },
+        "find": if view.find.open { json!({"query": view.find.query, "matches": view.find.matches.len(), "instance_hits": view.find.instance_hits.iter().map(|h| json!({"activity_id": h.activity_id, "process_instance_id": h.process_instance_id, "business_key": h.business_key})).collect::<Vec<_>>(), "current": view.find.cursor}) } else { Value::Null },
         "minimap": view.show_minimap, "show_ids": view.show_ids, "focused": view.focused,
     })
 }

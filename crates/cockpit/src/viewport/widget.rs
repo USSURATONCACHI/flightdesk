@@ -118,6 +118,9 @@ pub struct DiagramView {
     context_target: Option<Ref>,
     walk_candidates: Vec<(usize, usize)>,
     pub focused: bool,
+    /// References whose find highlight is on or still fading out.
+    find_fade: HashSet<Ref>,
+    find_dim_primed: bool,
     want_focus: bool,
     badges: Vec<BadgeHit>,
     /// Zoom-independent label layout cache.
@@ -158,6 +161,8 @@ impl DiagramView {
             pan_wrap: Default::default(),
             dial_wrap: Default::default(),
             fit_tokens_marker: false,
+            find_fade: HashSet::new(),
+            find_dim_primed: false,
             id,
         }
     }
@@ -498,17 +503,7 @@ fn show_impl(
             overlays.related.insert(Ref::Flow(f));
         }
     }
-    if view.find.active() {
-        overlays.matches = view.find.matches.iter().map(|m| m.target).collect();
-        overlays.instance_matches = view.find.instance_match_refs(model);
-        overlays.current_match = view.find.current_in(model);
-        overlays.dim_unmatched = true;
-    } else {
-        overlays.matches.clear();
-        overlays.instance_matches.clear();
-        overlays.current_match = None;
-        overlays.dim_unmatched = false;
-    }
+    view.animate_find_overlays(&ctx, model, overlays);
     let painter = ui.painter().with_clip_rect(rect);
     let mut renderer = Renderer::new(model, &view.camera, rect, &painter, style, overlays, &mut view.text);
     renderer.paint();
@@ -569,7 +564,59 @@ fn text_input_focused(ctx: &egui::Context, canvas_id: Id) -> bool {
     }
 }
 
+/// How long a find highlight takes to fade in or out, in seconds. Short enough to feel
+/// immediate, long enough that a token hopping between activities glides instead of blinking.
+pub const FIND_FADE_SECS: f32 = 0.22;
+
 impl DiagramView {
+    /// Fill the find-related overlays with per-reference strengths that ease in and out
+    /// instead of flipping, so live changes (instances moving on) do not flash.
+    fn animate_find_overlays(&mut self, ctx: &egui::Context, model: &Model, overlays: &mut Overlays) {
+        let active = self.find.active();
+        let el_now: HashSet<Ref> = if active { self.find.matches.iter().map(|m| m.target).collect() } else { HashSet::new() };
+        let inst_now: HashSet<Ref> = if active { self.find.instance_match_refs(model) } else { HashSet::new() };
+        overlays.current_match = if active { self.find.current_in(model) } else { None };
+        let dim_id = self.id.with("find-dim");
+        if !self.find_dim_primed {
+            // Same first-call snap as below: start from "not dimmed" so the first search eases in.
+            ctx.animate_bool_with_time(dim_id, false, FIND_FADE_SECS);
+            self.find_dim_primed = true;
+        }
+        overlays.dim_unmatched = ctx.animate_bool_with_time(dim_id, active, FIND_FADE_SECS);
+        let id = self.id;
+        let animate = |r: Ref, which: &str, on: bool, fresh: bool| {
+            let aid = id.with(("find-fade", which, r));
+            if fresh {
+                // egui snaps a never-seen animation to its target: register it as "off" first
+                // so a new highlight fades in rather than pops.
+                ctx.animate_bool_with_time(aid, false, FIND_FADE_SECS);
+            }
+            ctx.animate_bool_with_time(aid, on, FIND_FADE_SECS)
+        };
+        for r in el_now.iter().chain(inst_now.iter()) {
+            if self.find_fade.insert(*r) {
+                animate(*r, "el", false, true);
+                animate(*r, "inst", false, true);
+            }
+        }
+        overlays.matches.clear();
+        overlays.instance_matches.clear();
+        let (matches, instance_matches) = (&mut overlays.matches, &mut overlays.instance_matches);
+        self.find_fade.retain(|&r| {
+            let on_el = el_now.contains(&r);
+            let on_inst = inst_now.contains(&r);
+            let a = animate(r, "el", on_el, false);
+            let b = animate(r, "inst", on_inst, false);
+            if a > 0.0 {
+                matches.insert(r, a);
+            }
+            if b > 0.0 {
+                instance_matches.insert(r, b);
+            }
+            on_el || on_inst || a > 0.0 || b > 0.0
+        });
+    }
+
     fn find_bar_has_focus(&self, ctx: &egui::Context) -> bool {
         self.find.open && ctx.memory(|m| m.has_focus(self.id.with("find")))
     }
@@ -1248,4 +1295,100 @@ fn alt_badge(ctx: &egui::Context, view: &DiagramView, style: &DiagramStyle, rect
     painter.rect_filled(pill.expand(1.5), 9.0, Color32::from_black_alpha((40.0 * eased) as u8));
     painter.rect_filled(pill, 8.0, fill);
     painter.galley(pill.center() - galley.size() / 2.0, galley, style.badge_text.gamma_multiply(eased));
+}
+
+#[cfg(test)]
+mod find_fade_tests {
+    use super::*;
+    use crate::history::InstanceHit;
+
+    fn model() -> Model {
+        bpmn::parse(&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn")).unwrap()).unwrap()
+    }
+    fn hit(activity: &str) -> InstanceHit {
+        InstanceHit { process_instance_id: "pi-1".into(), business_key: Some("ORD-1".into()), activity_id: activity.into() }
+    }
+    /// Run one offline egui frame at absolute time `t` and return the overlays it produced.
+    fn frame(ctx: &egui::Context, t: f64, view: &mut DiagramView, model: &Model) -> Overlays {
+        let mut overlays = Overlays::default();
+        let mut out = ctx.run_pass(egui::RawInput { time: Some(t), ..Default::default() }, |ctx| view.animate_find_overlays(ctx, model, &mut overlays));
+        out.textures_delta.clear(); // no renderer in this test to apply them
+        overlays
+    }
+    fn strength(o: &Overlays, r: Ref) -> f32 {
+        o.instance_matches.get(&r).copied().unwrap_or(0.0)
+    }
+
+    #[test]
+    fn instance_highlights_ease_in_follow_moves_and_ease_out() {
+        let model = model();
+        let approve = Ref::Element(model.element_idx("Task_Approve").unwrap());
+        let ship = Ref::Element(model.element_idx("Task_Ship").unwrap());
+        let ctx = egui::Context::default();
+        let mut view = DiagramView::new(Id::new("fade-test"));
+        view.find.open = true;
+        view.find.query = "ORD".into();
+        view.find.instance_hits = vec![hit("Task_Approve")];
+        let fade = f64::from(FIND_FADE_SECS);
+
+        // A brand-new highlight starts from zero instead of popping in.
+        let o = frame(&ctx, 0.0, &mut view, &model);
+        assert!(strength(&o, approve) < 0.5, "fresh highlight must fade in, got {}", strength(&o, approve));
+        assert!(o.dim_unmatched < 0.5, "dimming eases in too");
+        let o = frame(&ctx, fade / 2.0, &mut view, &model);
+        let mid = strength(&o, approve);
+        assert!(mid > 0.0 && mid < 1.0, "mid-fade strength should be partial, got {mid}");
+        let o = frame(&ctx, fade * 2.0, &mut view, &model);
+        assert_eq!(strength(&o, approve), 1.0);
+        assert_eq!(o.dim_unmatched, 1.0);
+
+        // The instance moves on: the old highlight lingers while fading, the new one grows.
+        view.find.instance_hits = vec![hit("Task_Ship")];
+        let t0 = fade * 2.0;
+        let o = frame(&ctx, t0, &mut view, &model);
+        assert!(strength(&o, approve) > 0.5, "old highlight still visible right after the move");
+        let o = frame(&ctx, t0 + fade / 2.0, &mut view, &model);
+        assert!(strength(&o, approve) > 0.0 && strength(&o, approve) < 1.0, "old highlight mid fade-out");
+        assert!(strength(&o, ship) > 0.0 && strength(&o, ship) < 1.0, "new highlight mid fade-in");
+        let o = frame(&ctx, t0 + fade * 2.0, &mut view, &model);
+        assert!(!o.instance_matches.contains_key(&approve), "faded-out highlight is dropped, not kept at 0");
+        assert_eq!(strength(&o, ship), 1.0);
+        assert_eq!(view.find_fade.len(), 1, "bookkeeping forgets finished fades");
+
+        // Closing find fades everything out and leaves no state behind.
+        view.find.open = false;
+        let t1 = t0 + fade * 2.0;
+        let o = frame(&ctx, t1 + fade / 2.0, &mut view, &model);
+        assert!(strength(&o, ship) > 0.0 && strength(&o, ship) < 1.0);
+        assert!(o.dim_unmatched > 0.0 && o.dim_unmatched < 1.0);
+        let o = frame(&ctx, t1 + fade * 2.0, &mut view, &model);
+        assert!(o.matches.is_empty() && o.instance_matches.is_empty());
+        assert_eq!(o.dim_unmatched, 0.0);
+        assert!(view.find_fade.is_empty());
+    }
+
+    #[test]
+    fn element_and_instance_strengths_are_tracked_independently() {
+        let model = model();
+        let approve = Ref::Element(model.element_idx("Task_Approve").unwrap());
+        let ctx = egui::Context::default();
+        let mut view = DiagramView::new(Id::new("fade-test-2"));
+        view.find.open = true;
+        view.find.query = "Approve".into();
+        view.find.matches = bpmn::search::search(&model, "Approve", &bpmn::search::SearchOptions::default());
+        assert!(view.find.matches.iter().any(|m| m.target == approve), "fixture sanity: the query matches the task");
+        view.find.instance_hits = vec![hit("Task_Approve")];
+        let fade = f64::from(FIND_FADE_SECS);
+        let o = frame(&ctx, 0.0, &mut view, &model);
+        let o2 = frame(&ctx, fade * 2.0, &mut view, &model);
+        assert!(o.matches.get(&approve).copied().unwrap_or(0.0) < 1.0);
+        assert_eq!(o2.matches.get(&approve).copied(), Some(1.0));
+        assert_eq!(o2.instance_matches.get(&approve).copied(), Some(1.0));
+        // Instance leaves, element match stays: only one channel fades.
+        view.find.instance_hits.clear();
+        let o3 = frame(&ctx, fade * 2.0 + fade / 2.0, &mut view, &model);
+        assert_eq!(o3.matches.get(&approve).copied(), Some(1.0));
+        let b = o3.instance_matches.get(&approve).copied().unwrap_or(0.0);
+        assert!(b > 0.0 && b < 1.0, "instance channel mid fade-out, got {b}");
+    }
 }

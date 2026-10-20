@@ -125,7 +125,7 @@ impl Cmd {
             Cmd::GoDefinitions => app.navigate(Nav::Definitions, NavMode::Here),
             Cmd::GoIncidents => app.navigate(Nav::Incidents, NavMode::Here),
             Cmd::GoBatches => app.navigate(Nav::Batches, NavMode::Here),
-            Cmd::GoSettings => app.navigate(Nav::Settings, NavMode::Here),
+            Cmd::GoSettings => app.open_settings(),
             Cmd::NewTab => app.navigate(if app.net.is_some() { Nav::Definitions } else { Nav::Settings }, NavMode::NewTab),
             Cmd::CloseTab => app.close_tab(app.active),
             Cmd::NextTab => {
