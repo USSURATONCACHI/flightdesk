@@ -4,7 +4,7 @@
 # packaging/arch. Build artefacts (src/, pkg/, *.pkg.tar.*) are git-ignored.
 
 pkgname=flightdeck
-pkgver=0.1.0.r17.ge3ebc08
+pkgver=0.1.0.r20.gb8ae092
 pkgrel=1
 pkgdesc="Fast, keyboard-first cockpit for Camunda 7 process engines, with a built-in MCP server"
 arch=('x86_64' 'aarch64')

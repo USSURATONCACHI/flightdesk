@@ -249,7 +249,7 @@ impl<'a> Renderer<'a> {
         for &i in m.draw_order.iter() {
             let e = &m.elements[i];
             if self.visible_world(&e.bounds) && e.kind.is_flow_node() {
-                self.paint_badges(e);
+                self.paint_badges(i, e);
             }
         }
     }
@@ -646,9 +646,10 @@ impl<'a> Renderer<'a> {
             }
         }
         if self.overlays.active.contains(&e.id) && !self.overlays.incidents.contains_key(&e.id) {
-            // soft glow for live tokens
+            // soft glow for live tokens, dimmed with the element when find is active
+            let a = self.alpha_for(rref);
             for i in 1..=3 {
-                let g = st.running.gamma_multiply(0.10 / i as f32);
+                let g = st.running.gamma_multiply(0.10 / i as f32 * a);
                 let rr = r.expand(i as f32 * 3.0);
                 if e.kind.is_event() {
                     self.painter.circle_stroke(r.center(), r.width() / 2.0 + i as f32 * 3.0, Stroke::new(3.0, g));
@@ -659,40 +660,43 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn paint_badges(&mut self, e: &Element) {
+    fn paint_badges(&mut self, idx: usize, e: &Element) {
         let r = self.wr(e.bounds);
         let id = &e.id;
         let st = self.style;
+        // Badges belong to their element: when find dims the element, its badges dim with it.
+        let a = self.alpha_for(Ref::Element(idx));
         if let Some(&n) = self.overlays.running.get(id) {
-            let rect = self.badge(Pos2::new(r.max.x, r.min.y), &n.to_string(), st.running, Align2::CENTER_CENTER);
+            let rect = self.badge(Pos2::new(r.max.x, r.min.y), &n.to_string(), st.running, Align2::CENTER_CENTER, a);
             self.badges.push(BadgeHit { rect, kind: BadgeKind::Running, activity_id: id.clone() });
         }
         if let Some(&n) = self.overlays.incidents.get(id) {
-            let rect = self.badge(Pos2::new(r.min.x, r.min.y), &n.to_string(), st.incident, Align2::CENTER_CENTER);
+            let rect = self.badge(Pos2::new(r.min.x, r.min.y), &n.to_string(), st.incident, Align2::CENTER_CENTER, a);
             self.badges.push(BadgeHit { rect, kind: BadgeKind::Incident, activity_id: id.clone() });
         }
         if let Some(&n) = self.overlays.completed.get(id) {
             if n > 1 {
-                let rect = self.badge(Pos2::new(r.max.x, r.max.y), &format!("×{n}"), st.completed, Align2::CENTER_CENTER);
+                let rect = self.badge(Pos2::new(r.max.x, r.max.y), &format!("×{n}"), st.completed, Align2::CENTER_CENTER, a);
                 self.badges.push(BadgeHit { rect, kind: BadgeKind::Completed, activity_id: id.clone() });
             }
         }
         if let Some((label, overdue)) = self.overlays.timers.get(id) {
             let color = if *overdue { st.incident } else { st.suspended };
             let anchor = Pos2::new(r.center().x, r.max.y + 6.0);
-            let rect = self.badge(anchor, label, color, Align2::CENTER_TOP);
+            let rect = self.badge(anchor, label, color, Align2::CENTER_TOP, a);
             self.badges.push(BadgeHit { rect, kind: BadgeKind::Timer, activity_id: id.clone() });
         }
     }
 
-    /// Constant screen-size pill with text; returns its rect.
-    fn badge(&self, anchor: Pos2, text: &str, color: Color32, align: Align2) -> Rect {
+    /// Constant screen-size pill with text at opacity `alpha`; returns its rect.
+    fn badge(&self, anchor: Pos2, text: &str, color: Color32, align: Align2, alpha: f32) -> Rect {
         let font = FontId::proportional(11.0);
-        let galley = self.painter.layout_no_wrap(text.to_string(), font, self.style.badge_text);
+        let text_color = self.style.badge_text.gamma_multiply(alpha);
+        let galley = self.painter.layout_no_wrap(text.to_string(), font, text_color);
         let size = Vec2::new((galley.size().x + 10.0).max(18.0), 18.0);
         let rect = align.anchor_size(anchor, size);
-        self.painter.rect_filled(rect, 9.0, color);
-        self.painter.galley(rect.center() - galley.size() / 2.0, galley, self.style.badge_text);
+        self.painter.rect_filled(rect, 9.0, color.gamma_multiply(alpha));
+        self.painter.galley(rect.center() - galley.size() / 2.0, galley, text_color);
         rect
     }
 
