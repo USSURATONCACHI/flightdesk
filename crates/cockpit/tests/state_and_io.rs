@@ -290,3 +290,36 @@ fn an_app_without_a_settings_path_never_writes_a_settings_file() {
     assert_eq!(Settings::load_from(&target).theme, ThemeMode::Light);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[cfg(unix)]
+#[test]
+fn settings_files_are_private_and_loose_permissions_are_detected_and_fixed() {
+    use cockpit::settings::perms;
+    use std::os::unix::fs::PermissionsExt;
+    let base = std::env::temp_dir().join(format!("flightdeck-perms-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join("flightdeck");
+    let path = dir.join("settings.toml");
+    // a fresh save creates a 700 directory and a 600 file
+    Settings::default().save_to(&path);
+    assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    assert!(perms::audit(&dir).is_empty());
+    // saving over a file that was loosened keeps it private (mode is re-applied, not only on create)
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    Settings::default().save_to(&path);
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    // an audit catches a world-readable directory, file and stray backup, and fix repairs them all
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o664)).unwrap();
+    std::fs::write(dir.join("settings.toml.broken-x"), "junk").unwrap();
+    std::fs::set_permissions(dir.join("settings.toml.broken-x"), std::fs::Permissions::from_mode(0o644)).unwrap();
+    let issues = perms::audit(&dir);
+    let paths: Vec<_> = issues.iter().map(|i| i.path.file_name().unwrap().to_string_lossy().to_string()).collect();
+    assert_eq!(paths, vec!["flightdeck", "settings.toml", "settings.toml.broken-x"]);
+    assert!(issues[0].is_dir && issues[0].describe().contains("expected 700"));
+    assert!(perms::fix(&issues).is_empty());
+    assert!(perms::audit(&dir).is_empty());
+    assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
+    let _ = std::fs::remove_dir_all(&base);
+}

@@ -763,6 +763,34 @@ impl App {
         }
     }
 
+    /// Warn (with a one-click fix) when the configuration directory or any file in it is readable
+    /// by other users. Run once after start-up.
+    pub fn audit_settings_permissions(&mut self) {
+        let Some(dir) = self.settings_path.as_ref().and_then(|p| p.parent().map(|d| d.to_path_buf())) else { return };
+        let issues = crate::settings::perms::audit(&dir);
+        if issues.is_empty() {
+            return;
+        }
+        let details = issues.iter().map(|i| i.describe()).collect::<Vec<_>>().join("\n");
+        let n = issues.len();
+        let fix_list = issues.clone();
+        self.toasts.push_with_action(
+            ToastKind::Warning,
+            format!("Settings {} readable by other users ({n} path{}). Saved passwords should be private.", if n == 1 { "file is" } else { "files are" }, if n == 1 { "" } else { "s" }),
+            Some(details),
+            "Fix permissions",
+            Some(Box::new(move |app: &mut App| {
+                let failed = crate::settings::perms::fix(&fix_list);
+                if failed.is_empty() {
+                    app.toasts.push(ToastKind::Success, "Settings directory is now private (700 / 600)");
+                } else {
+                    let d = failed.iter().map(|(i, e)| format!("{}: {e}", i.path.display())).collect::<Vec<_>>().join("\n");
+                    app.toasts.error("Some permissions could not be changed", Some(d));
+                }
+            })),
+        );
+    }
+
     fn report_stats(&self) {
         if self.stats && !self.frame_times.is_empty() {
             let mut t = self.frame_times.clone();
@@ -781,6 +809,7 @@ impl App {
             self.ctx = Some(ctx.clone());
             crate::theme::install_fonts(ctx);
             self.apply_theme(ctx);
+            self.audit_settings_permissions();
         }
         self.set_ctx(ctx);
         crate::platform::pump();

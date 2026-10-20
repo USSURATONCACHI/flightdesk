@@ -185,12 +185,14 @@ impl Settings {
             }
         }
         if let Some(dir) = p.parent() {
-            let _ = std::fs::create_dir_all(dir);
+            if let Err(e) = perms::create_private_dir(dir) {
+                log::warn!("cannot create settings directory: {e}");
+            }
         }
         match toml::to_string_pretty(&copy) {
             Ok(s) => {
                 let tmp = p.with_extension("toml.tmp");
-                if let Err(e) = std::fs::write(&tmp, s).and_then(|_| std::fs::rename(&tmp, p)) {
+                if let Err(e) = perms::write_private(&tmp, s.as_bytes()).and_then(|_| std::fs::rename(&tmp, p)) {
                     log::warn!("cannot save settings: {e}");
                 }
             }
@@ -200,5 +202,114 @@ impl Settings {
 
     pub fn engine(&self) -> &EngineProfile {
         &self.engines[self.last_engine.min(self.engines.len().saturating_sub(1))]
+    }
+}
+
+/// File-permission hygiene for the configuration directory: the settings file can hold engine
+/// passwords, so the directory is `0700` and every file in it `0600`. On non-Unix platforms the
+/// per-user config directory is already private and these are no-ops.
+pub mod perms {
+    use std::path::{Path, PathBuf};
+
+    /// A path whose mode lets other users read it.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Issue {
+        pub path: PathBuf,
+        pub mode: u32,
+        pub is_dir: bool,
+    }
+
+    impl Issue {
+        pub fn describe(&self) -> String {
+            format!("{} is {:o}, expected {}", self.path.display(), self.mode & 0o777, if self.is_dir { "700" } else { "600" })
+        }
+    }
+
+    pub fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            if !dir.exists() {
+                return std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir);
+            }
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        {
+            std::fs::create_dir_all(dir)
+        }
+    }
+
+    /// Create or truncate `p` with owner-only permissions and write `data`.
+    pub fn write_private(p: &Path, data: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(p)?;
+        f.write_all(data)?;
+        #[cfg(unix)]
+        {
+            // The mode above only applies on creation; an existing file keeps its old mode.
+            use std::os::unix::fs::PermissionsExt;
+            f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
+    }
+
+    /// Everything under the config directory that is readable by group or others.
+    pub fn audit(dir: &Path) -> Vec<Issue> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut out = vec![];
+            let Ok(meta) = std::fs::metadata(dir) else { return out };
+            let mode = meta.permissions().mode();
+            if mode & 0o077 != 0 {
+                out.push(Issue { path: dir.to_path_buf(), mode, is_dir: true });
+            }
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                let mut entries: Vec<_> = rd.flatten().collect();
+                entries.sort_by_key(|e| e.file_name());
+                for e in entries {
+                    let Ok(m) = e.metadata() else { continue };
+                    let mode = m.permissions().mode();
+                    if mode & 0o077 != 0 {
+                        out.push(Issue { path: e.path(), mode, is_dir: m.is_dir() });
+                    }
+                }
+            }
+            out
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = dir;
+            Vec::new()
+        }
+    }
+
+    /// Tighten everything `audit` reported. Returns the issues that could not be fixed.
+    pub fn fix(issues: &[Issue]) -> Vec<(Issue, String)> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut failed = vec![];
+            for i in issues {
+                let mode = if i.is_dir { 0o700 } else { 0o600 };
+                if let Err(e) = std::fs::set_permissions(&i.path, std::fs::Permissions::from_mode(mode)) {
+                    failed.push((i.clone(), e.to_string()));
+                }
+            }
+            failed
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = issues;
+            Vec::new()
+        }
     }
 }
