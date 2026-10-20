@@ -410,52 +410,57 @@ pub fn help_overlay(ctx: &egui::Context, app: &mut App) {
         return;
     }
     let mut open = true;
-    egui::Window::new("Keyboard & mouse").collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
-        ui.set_width(720.0);
-        ui.columns(2, |cols| {
-            let left = &mut cols[0];
-            left.label(egui::RichText::new("Diagram").strong());
-            egui::Grid::new("help-diagram").num_columns(2).spacing([16.0, 3.0]).show(left, |ui| {
-                for (k, v) in [
-                    ("Wheel / pinch", "zoom at cursor"),
-                    ("Alt (hold)", "everything twice as fast: pan, zoom, dial"),
-                    ("Shift+wheel", "pan horizontally"),
-                    ("Drag, middle-drag, Space+drag", "pan (flick for inertia)"),
-                    ("↑↓←→  WASD  HJKL", "pan (hold to accelerate, Shift faster)"),
-                    ("+ / −", "zoom in / out"),
-                    ("0 · 1 · F · Shift+F", "fit all · 100% · fit selection · fit tokens"),
-                    ("Double-click", "zoom to element (empty: fit all)"),
-                    ("Tab / Shift+Tab", "next / previous element along the flow"),
-                    ("Alt+→ / Alt+←", "follow outgoing / incoming flow (1-9 picks)"),
-                    ("Enter", "inspect · drill into call activity"),
-                    ("Ctrl+F", "find element (Enter/Shift+Enter cycle)"),
-                    ("Ctrl+C", "copy element id"),
-                    ("M · G · I", "minimap · grid · element ids"),
-                    ("Right-click", "context menu"),
-                    ("Esc", "close find → clear selection"),
-                ] {
-                    ui.label(egui::RichText::new(k).monospace().size(12.0));
-                    ui.label(egui::RichText::new(v).size(12.0));
-                    ui.end_row();
-                }
-            });
-            let right = &mut cols[1];
-            right.label(egui::RichText::new("Everywhere").strong());
-            egui::Grid::new("help-global").num_columns(2).spacing([16.0, 3.0]).show(right, |ui| {
-                for c in Cmd::ALL {
-                    let info = c.info();
-                    if info.keys_label.is_empty() {
-                        continue;
-                    }
-                    ui.label(egui::RichText::new(info.keys_label).monospace().size(12.0));
-                    ui.label(egui::RichText::new(info.name).size(12.0));
-                    ui.end_row();
-                }
-                for (k, v) in [("Ctrl+1…9", "dock tab"), ("↑↓ · Enter · Shift+Enter", "tables: move · open · open in new tab"), ("Middle-click", "open in new tab"), ("/", "focus the filter box"), ("Alt (hold)", "inspect element under the cursor")] {
-                    ui.label(egui::RichText::new(k).monospace().size(12.0));
-                    ui.label(egui::RichText::new(v).size(12.0));
-                    ui.end_row();
-                }
+    // Two content-sized tables side by side; the window takes their width instead of forcing
+    // one, and scrolls when the screen is shorter than the list.
+    let max_h = ctx.content_rect().height() - 80.0;
+    egui::Window::new("Keyboard & mouse").collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).max_height(max_h).show(ctx, |ui| {
+        egui::ScrollArea::vertical().max_height(max_h - 40.0).show(ui, |ui| {
+            // Fixed width per table: side-by-side content inside a self-sizing window would
+            // otherwise give the second table only the leftover width.
+            const TABLE_W: f32 = 540.0;
+            let table = |ui: &mut egui::Ui, id: &str, title: &str, rows: &[(String, String)]| {
+                ui.vertical(|ui| {
+                    ui.set_min_width(TABLE_W);
+                    ui.set_max_width(TABLE_W);
+                    ui.label(egui::RichText::new(title).strong());
+                    // Keys never wrap; descriptions wrap inside a capped column, so neither
+                    // column can run into the other whatever the window width.
+                    egui::Grid::new(id).num_columns(2).spacing([16.0, 3.0]).striped(true).max_col_width(340.0).show(ui, |ui| {
+                        for (k, v) in rows {
+                            ui.add(egui::Label::new(egui::RichText::new(k).monospace().size(12.0)).extend());
+                            ui.add(egui::Label::new(egui::RichText::new(v).size(12.0)).wrap());
+                            ui.end_row();
+                        }
+                    });
+                });
+            };
+            let diagram: Vec<(String, String)> = [
+                ("Wheel / pinch", "zoom at cursor"),
+                ("Alt (hold)", "pan and zoom faster (×2 by default, see Settings)"),
+                ("Shift+wheel", "pan horizontally"),
+                ("Drag, middle-drag, Space+drag", "pan (flick for inertia)"),
+                ("↑↓←→  WASD  HJKL", "pan (hold to accelerate, Shift faster)"),
+                ("+ / −", "zoom in / out (Alt: by the Alt factor)"),
+                ("0 · 1 · F · Shift+F", "fit all · 100% · fit selection · fit tokens"),
+                ("Double-click", "zoom to element (empty: fit all)"),
+                ("Tab / Shift+Tab", "next / previous element along the flow"),
+                ("Alt+→ / Alt+←", "follow outgoing / incoming flow (1-9 picks)"),
+                ("Enter", "inspect · drill into call activity"),
+                ("Ctrl+F", "find element or instance (Enter/Shift+Enter cycle)"),
+                ("Ctrl+C", "copy element id"),
+                ("M · G · I", "minimap · grid · element ids"),
+                ("Right-click", "context menu"),
+                ("Esc", "close find → clear selection"),
+            ]
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+            let mut everywhere: Vec<(String, String)> = Cmd::ALL.iter().map(|c| c.info()).filter(|i| !i.keys_label.is_empty()).map(|i| (i.keys_label.to_string(), i.name.to_string())).collect();
+            everywhere.extend([("Ctrl+1…9", "dock tab"), ("↑↓ · Enter · Shift+Enter", "tables: move · open · open in new tab"), ("Middle-click", "open in new tab"), ("/", "focus the filter box"), ("Alt (hold)", "inspect element under the cursor")].iter().map(|(k, v)| (k.to_string(), v.to_string())));
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 28.0;
+                table(ui, "help-diagram", "Diagram", &diagram);
+                table(ui, "help-global", "Everywhere", &everywhere);
             });
         });
         ui.add_space(6.0);
