@@ -3,6 +3,7 @@
 #   run-vm.sh install <win10.iso>   wipe & install Windows into the VM disk, run setup.ps1 at first logon
 #   run-vm.sh start                 boot the installed VM
 #   run-vm.sh stop | status | screenshot <out.png> | keys <k...> | type <text> | serve
+#   run-vm.sh next <portable|done>   hand the guest its phase-2 command (see setup.ps1)
 # State lives in $FLIGHTDECK_VM_DIR (default ~/.cache/flightdeck-vm; put it on a disk that is not
 # your system volume). FLIGHTDECK_VM_BPS caps guest disk bandwidth (default 120 MB/s). The guest reaches the
 # host as 10.0.2.2; the guest's port 7799 (Flightdeck MCP) is forwarded to 127.0.0.1:7799 and
@@ -70,9 +71,12 @@ case "${1:-}" in
     # dist/ plus setup.ps1 and a one-line /msi-name; progress pings from the guest show in the log.
     srv=$vmdir/serve; rm -rf "$srv"; mkdir -p "$srv/vm-stage"
     cp "$repo"/dist/flightdeck-*-x64.msi "$srv/" 2>/dev/null || { echo "no MSI in dist/ (run packaging/windows/build.sh with msitools installed)" >&2; exit 1; }
+    cp "$repo"/dist/flightdeck-*-windows-x86_64.zip "$srv/" 2>/dev/null || true
     cp "$here/setup.ps1" "$srv/"; basename "$(ls "$srv"/*.msi | head -1)" > "$srv/msi-name"
-    for s in logon downloaded started exe-missing; do : > "$srv/vm-stage/$s"; done
+    basename "$(ls "$srv"/*.zip 2>/dev/null | head -1)" > "$srv/zip-name"; : > "$srv/next"
+    for s in logon downloaded started exe-missing uninstalled-exit-0 portable-started portable-config-True portable-config-False dirmsi-installed-exit-0 dirmsi-started dirmsi-exe-missing; do : > "$srv/vm-stage/$s"; done
     cd "$srv" && exec python3 -m http.server 8000 --bind 127.0.0.1
     ;;
-  *) sed -n 2,8p "$0"; exit 1 ;;
+  next) echo "${2:?portable|done}" > "$vmdir/serve/next"; echo "next = $2" ;;
+  *) sed -n 2,9p "$0"; exit 1 ;;
 esac

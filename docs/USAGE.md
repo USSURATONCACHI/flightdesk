@@ -104,11 +104,18 @@ scratch pair so they never touch your real configuration.
   (default `/usr/local`) with the right modes; `run-in-place` runs from the extracted folder with
   `config/`, `data/` and `locales/` beside the binary (portable mode).
 - **Windows** — `packaging/windows/build.sh` cross-compiles from Linux (`x86_64-pc-windows-gnu`,
-  needs `mingw-w64-gcc`) into `dist/flightdeck-<version>-windows-x86_64.zip` (portable, with
-  `run-in-place.cmd`) and, when `msitools` is installed, `dist/flightdeck-<version>-x64.msi`
-  built with `wixl` (per-machine install into Program Files, Start-menu shortcut, language packs
-  beside the executable). The Windows build uses the GUI subsystem and attaches to the parent
-  console when started from one, so logging still goes to stdout.
+  needs `mingw-w64-gcc`; `msitools` for the installers) into:
+  - `dist/flightdeck-<version>-x64.msi`: self-contained installer (payload embedded), per-machine
+    install into Program Files, Start-menu shortcut, upgrade handling;
+  - `dist/flightdeck-<version>-windows-x86_64.zip`: the portable archive — `flightdeck.exe`,
+    `locales/`, `run-in-place.ps1` / `run-in-place.cmd` (portable mode: `config/`, `data/` and
+    `locales/` beside the executable) and `flightdeck-setup.msi`, a small installer that takes
+    its files from the archive folder it sits in (uncompressed media, relative paths), so the
+    archive carries an installer without duplicating the payload.
+
+  The Windows build uses the GUI subsystem and attaches to the parent console when started from
+  one, so logging still goes to stdout. Both installers and the executable are checked under
+  Wine (`wine msiexec /i …`, `wine flightdeck.exe --mcp`) as well as on Windows.
 - **Windows test VM** — `packaging/windows/vm/run-vm.sh install <win10.iso>` installs Windows 10
   unattended on QEMU/KVM; at first logon the guest fetches `setup.ps1` from the host, installs
   the MSI silently and starts Flightdeck with `--mcp-host 0.0.0.0`, forwarded to
