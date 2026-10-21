@@ -423,20 +423,24 @@ pub fn help_overlay(ctx: &egui::Context, app: &mut App) {
     let mut open = true;
     // Two content-sized tables side by side; the window takes their width instead of forcing
     // one, and scrolls when the screen is shorter than the list.
-    let max_h = ctx.content_rect().height() - 80.0;
+    let screen = ctx.content_rect();
+    let max_h = screen.height() - 80.0;
+    // Two tables side by side when they fit, otherwise one above the other; each table is never
+    // wider than the screen, so nothing is cut off on small windows.
+    let table_w = (screen.width() - 72.0).clamp(280.0, 540.0);
+    let side_by_side = screen.width() >= 2.0 * table_w + 28.0 + 72.0;
     egui::Window::new(crate::t!("help-title")).collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).max_height(max_h).show(ctx, |ui| {
         egui::ScrollArea::vertical().max_height(max_h - 40.0).show(ui, |ui| {
             // Fixed width per table: side-by-side content inside a self-sizing window would
             // otherwise give the second table only the leftover width.
-            const TABLE_W: f32 = 540.0;
             let table = |ui: &mut egui::Ui, id: &str, title: &str, rows: &[(String, String)]| {
                 ui.vertical(|ui| {
-                    ui.set_min_width(TABLE_W);
-                    ui.set_max_width(TABLE_W);
+                    ui.set_min_width(table_w);
+                    ui.set_max_width(table_w);
                     ui.label(egui::RichText::new(title).strong());
                     // Keys never wrap; descriptions wrap inside a capped column, so neither
                     // column can run into the other whatever the window width.
-                    egui::Grid::new(id).num_columns(2).spacing([16.0, 3.0]).striped(true).max_col_width(340.0).show(ui, |ui| {
+                    egui::Grid::new(id).num_columns(2).spacing([16.0, 3.0]).striped(true).max_col_width(table_w * 0.62).show(ui, |ui| {
                         for (k, v) in rows {
                             ui.add(egui::Label::new(egui::RichText::new(k).monospace().size(12.0)).extend());
                             ui.add(egui::Label::new(egui::RichText::new(v).size(12.0)).wrap());
@@ -468,11 +472,17 @@ pub fn help_overlay(ctx: &egui::Context, app: &mut App) {
             .collect();
             let mut everywhere: Vec<(String, String)> = Cmd::ALL.iter().map(|c| c.info()).filter(|i| !i.keys_label.is_empty()).map(|i| (i.keys_label.to_string(), i.name())).collect();
             everywhere.extend([("Ctrl+1…9", crate::t!("help-g-dock-tab")), ("↑↓ · Enter · Shift+Enter", crate::t!("help-g-tables")), ("Middle-click", crate::t!("help-g-middle-click")), ("/", crate::t!("help-g-slash")), ("Alt (hold)", crate::t!("help-g-alt"))].iter().map(|(k, v)| (k.to_string(), v.clone())));
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = 28.0;
+            if side_by_side {
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = 28.0;
+                    table(ui, "help-diagram", &crate::t!("help-diagram"), &diagram);
+                    table(ui, "help-global", &crate::t!("help-everywhere"), &everywhere);
+                });
+            } else {
                 table(ui, "help-diagram", &crate::t!("help-diagram"), &diagram);
+                ui.add_space(10.0);
                 table(ui, "help-global", &crate::t!("help-everywhere"), &everywhere);
-            });
+            }
         });
         ui.add_space(6.0);
         ui.label(egui::RichText::new(crate::t!("help-close-hint")).weak().small());

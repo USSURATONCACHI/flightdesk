@@ -56,7 +56,7 @@ if tools is None:
 # 2. engine + place
 st, _ = call("ui_state")
 eng, _ = call("engine_status")
-check("connected to the host's scratch engine", st.get("connected") and str(eng.get("version", "")).startswith("7."), json.dumps(eng)[:120])
+check("connected to the host's scratch engine", st.get("connected") and "7." in str(eng.get("status", "")), str(eng.get("status")))
 check("definition place opened from the command line", st.get("place", {}).get("kind") == "definition" and st["place"].get("key") == "order_process", st.get("place", {}).get("kind"))
 time.sleep(2)
 st, _ = call("ui_state")
@@ -92,7 +92,7 @@ call("ui_key", key="Plus")
 time.sleep(1.0)
 z1 = call("ui_state")[0]["place"]["diagram"]["zoom"]
 check("keyboard zoom works", z1 > z0 * 1.3, f"{z0:.3f} -> {z1:.3f}")
-call("ui_key", key="Num0")
+call("ui_key", key="0")
 time.sleep(1.0)
 
 # 5. inspector + copy button path (the release hang)

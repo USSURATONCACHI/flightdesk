@@ -67,6 +67,7 @@ case "${1:-}" in
   screenshot) python3 "$here/qmp.py" "$qmp" screendump "${2:?out.png}" ;;
   keys) shift; python3 "$here/qmp.py" "$qmp" keys "$@" ;;
   type) shift; python3 "$here/qmp.py" "$qmp" type "$@" ;;
+  typealt) shift; python3 "$here/qmp.py" "$qmp" typealt "$@" ;;
   serve)
     # dist/ plus setup.ps1 and a one-line /msi-name; progress pings from the guest show in the log.
     srv=$vmdir/serve; rm -rf "$srv"; mkdir -p "$srv/vm-stage"
@@ -75,7 +76,8 @@ case "${1:-}" in
     cp "$here/setup.ps1" "$srv/"; basename "$(ls "$srv"/*.msi | head -1)" > "$srv/msi-name"
     basename "$(ls "$srv"/*.zip 2>/dev/null | head -1)" > "$srv/zip-name"; : > "$srv/next"
     for s in logon downloaded started exe-missing uninstalled-exit-0 portable-started portable-config-True portable-config-False dirmsi-installed-exit-0 dirmsi-started dirmsi-exe-missing; do : > "$srv/vm-stage/$s"; done
-    cd "$srv" && exec python3 -m http.server 8000 --bind 127.0.0.1
+    cp "$here/diag.ps1" "$srv/"
+    cd "$srv" && exec python3 "$here/serve.py" 8000
     ;;
   next) echo "${2:?portable|done}" > "$vmdir/serve/next"; echo "next = $2" ;;
   *) sed -n 2,9p "$0"; exit 1 ;;

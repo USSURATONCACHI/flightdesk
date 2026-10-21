@@ -732,7 +732,9 @@ impl App {
         let tokens = self.tokens.clone();
         egui::Panel::bottom("statusbar").frame(egui::Frame::new().fill(tokens.bg1).inner_margin(egui::Margin::symmetric(10, 3))).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(&self.status_hint).weak().small());
+                // Right side first so the hint gets only the remaining width and is truncated
+                // (full text on hover) instead of running underneath the status labels.
+                let hint = self.status_hint.clone();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let inflight = self.net.as_ref().map(|n| n.in_flight()).unwrap_or(0);
                     if inflight > 0 {
@@ -744,6 +746,9 @@ impl App {
                     } else if self.settings.pause_when_unfocused && !self.window_focused {
                         ui.label(RichText::new(t!("status-paused-unfocused")).weak().small());
                     }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add(egui::Label::new(RichText::new(&hint).weak().small()).truncate()).on_hover_text(&hint);
+                    });
                 });
             });
         });
@@ -877,7 +882,13 @@ impl App {
         // synthetic input from MCP (ui_key / ui_type)
         if !self.synthetic_events.is_empty() {
             let evs = std::mem::take(&mut self.synthetic_events);
-            ctx.input_mut(|i| i.events.extend(evs));
+            // Real keystrokes only reach a focused window, so egui ignores widget focus while the
+            // window is unfocused. Synthetic input targets the window explicitly (an agent drives
+            // it, often while Windows keeps it in the background), so this frame counts as focused.
+            ctx.input_mut(|i| {
+                i.focused = true;
+                i.events.extend(evs);
+            });
             ctx.request_repaint();
         }
         // drain action callbacks

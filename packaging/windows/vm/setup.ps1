@@ -4,13 +4,22 @@
 $ErrorActionPreference = "Continue"
 $host_ = "http://10.0.2.2:8000"
 function Report($stage) { try { Invoke-WebRequest -UseBasicParsing "$host_/vm-stage/$stage" | Out-Null } catch {} }
+function Fetch($name) {
+  $c = (Invoke-WebRequest -UseBasicParsing "$host_/$name").Content
+  if ($c -is [byte[]]) { $c = [Text.Encoding]::UTF8.GetString($c) }
+  return $c.Trim()
+}
+function Up($name, $path) { if (Test-Path $path) { try { Invoke-RestMethod -Uri "$host_/upload/$name" -Method Post -InFile $path | Out-Null } catch {} } }
+# A re-run (injected after a failed first attempt) replaces the earlier instance of this script.
+Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID } | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Transcript -Path C:\setup-transcript.txt -Append
 Report "logon"
-$msi = (Invoke-WebRequest -UseBasicParsing "$host_/msi-name").Content.Trim()
+$msi = Fetch "msi-name"
 Invoke-WebRequest -UseBasicParsing "$host_/$msi" -OutFile "C:\$msi"
 Report "downloaded"
 $p = Start-Process msiexec.exe -ArgumentList "/i `"C:\$msi`" /qn /norestart /l*v C:\msi.log" -Wait -PassThru
 Report "installed-exit-$($p.ExitCode)"
+Up "msi.log" "C:\msi.log"
 $exe = "C:\Program Files\Flightdeck\flightdeck.exe"
 if (Test-Path $exe) {
   New-NetFirewallRule -DisplayName "Flightdeck MCP" -Direction Inbound -Protocol TCP -LocalPort 7799 -Action Allow | Out-Null
@@ -21,13 +30,13 @@ if (Test-Path $exe) {
 }
 # Phase 2 is driven by the host: it writes a command into /next when its checks are done.
 while ($true) {
-  try { $cmd = (Invoke-WebRequest -UseBasicParsing "$host_/next").Content.Trim() } catch { $cmd = "" }
+  try { $cmd = Fetch "next" } catch { $cmd = "" }
   if ($cmd -eq "portable") {
     Get-Process flightdeck -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 2
     $p = Start-Process msiexec.exe -ArgumentList "/x `"C:\$msi`" /qn /norestart" -Wait -PassThru
     Report "uninstalled-exit-$($p.ExitCode)"
-    $zip = (Invoke-WebRequest -UseBasicParsing "$host_/zip-name").Content.Trim()
+    $zip = Fetch "zip-name"
     Invoke-WebRequest -UseBasicParsing "$host_/$zip" -OutFile "C:\$zip"
     Expand-Archive -LiteralPath "C:\$zip" -DestinationPath "C:\portable" -Force
     $dir = (Get-ChildItem "C:\portable" -Directory | Select-Object -First 1).FullName
@@ -41,6 +50,7 @@ while ($true) {
     # b) directory MSI from inside the archive
     $p = Start-Process msiexec.exe -ArgumentList "/i `"$dir\flightdeck-setup.msi`" /qn /norestart /l*v C:\msi-portable.log" -Wait -PassThru
     Report "dirmsi-installed-exit-$($p.ExitCode)"
+    Up "msi-portable.log" "C:\msi-portable.log"
     if (Test-Path $exe) {
       Start-Process -FilePath $exe -ArgumentList "--mcp --mcp-port 7799 --mcp-host 0.0.0.0 --url http://10.0.2.2:8089/engine-rest --open def:order_process" -WorkingDirectory "C:\Program Files\Flightdeck"
       Report "dirmsi-started"
@@ -53,3 +63,4 @@ while ($true) {
   Start-Sleep -Seconds 5
 }
 Stop-Transcript
+Up "setup-transcript.txt" "C:\setup-transcript.txt"

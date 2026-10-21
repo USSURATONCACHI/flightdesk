@@ -236,3 +236,30 @@ fn inspector_copy_buttons_do_not_hang() {
     let st = call(harness.state_mut(), "ui_state", json!({})).unwrap();
     assert_eq!(st["place"]["diagram"]["selection"]["element_id"], "Task_Approve");
 }
+
+/// MCP keys must work while the OS window is unfocused (Windows does not hand focus to a window
+/// started by a background process, and egui ignores widget focus in an unfocused window).
+#[test]
+fn synthetic_keys_work_in_an_unfocused_window() {
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn");
+    let ctx = egui::Context::default();
+    let settings = Settings { zoom_speed: 1.0, ..Default::default() };
+    let mut app = App::new(&ctx, settings, 1.0);
+    app.offline = true;
+    app.navigate(cockpit::state::Nav::File { path: fixture.into() }, cockpit::state::NavMode::NewTab);
+    let mut harness = Harness::builder().with_size(egui::Vec2::new(1400.0, 860.0)).allow_missing_glyphs().build_ui_state(|ui, app: &mut App| app.frame(ui), app);
+    harness.input_mut().focused = false;
+    harness.run_steps(5);
+    let zoom = |h: &mut Harness<'_, App>| call(h.state_mut(), "ui_state", json!({})).unwrap()["place"]["diagram"]["zoom"].as_f64().unwrap();
+    call(harness.state_mut(), "ui_zoom", json!({"level": 1.0})).unwrap();
+    harness.run_steps(2);
+    let z0 = zoom(&mut harness);
+    call(harness.state_mut(), "ui_key", json!({"key": "Plus"})).unwrap();
+    harness.run_steps(2);
+    let z1 = zoom(&mut harness);
+    assert!((z1 / z0 - 1.25).abs() < 1e-3, "+ must zoom even though the window is unfocused, got {}", z1 / z0);
+    call(harness.state_mut(), "ui_key", json!({"key": "Tab"})).unwrap();
+    harness.run_steps(2);
+    let sel = call(harness.state_mut(), "ui_state", json!({})).unwrap()["place"]["diagram"]["selection"].clone();
+    assert!(!sel.is_null(), "Tab must select an element in an unfocused window");
+}
