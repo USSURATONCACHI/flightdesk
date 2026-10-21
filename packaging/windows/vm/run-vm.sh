@@ -13,23 +13,17 @@ vmdir=${FLIGHTDECK_VM_DIR:-$HOME/.cache/flightdeck-vm}
 disk=$vmdir/win10.qcow2
 qmp=$vmdir/qmp.sock
 pidfile=$vmdir/qemu.pid
+cpu=${FLIGHTDECK_VM_CPU:-host}
+unattend=${FLIGHTDECK_VM_UNATTEND:-$here/autounattend.xml}
 mkdir -p "$vmdir"
 
 unattend_image() {
-  local img=$vmdir/unattend.img
-  rm -f "$img"
-  mkfs.vfat -C "$img" 1440 >/dev/null
-  mcopy -i "$img" "$here/autounattend.xml" ::autounattend.xml
+  # A second CD with the answer file. (A floppy makes Windows Setup fail with 0x80070570.)
+  local img=$vmdir/unattend.iso
+  local py=$vmdir/venv/bin/python3
+  [ -x "$py" ] || { python3 -m venv "$vmdir/venv" >/dev/null && "$vmdir/venv/bin/pip" install -q pycdlib; }
+  "$py" "$here/make-unattend-iso.py" "$unattend" "$img" >/dev/null
   echo "$img"
-}
-
-boot() {
-  local extra=("$@")
-  qemu-system-x86_64 -name flightdeck-win10 -enable-kvm -cpu host -smp 4 -m 6G -machine pc \
-    -drive "file=$disk,if=virtio,format=qcow2" \
-    -netdev user,id=n0,hostfwd=tcp:127.0.0.1:7799-:7799 -device e1000,netdev=n0 \
-    -vga std -display none -usb -device usb-tablet \
-    -rtc base=utc -qmp "unix:$qmp,server,nowait" -pidfile "$pidfile" -daemonize "${extra[@]}"
 }
 
 case "${1:-}" in
@@ -39,9 +33,13 @@ case "${1:-}" in
     rm -f "$disk"; qemu-img create -f qcow2 "$disk" 64G >/dev/null
     # virtio storage needs a driver Windows lacks; install onto IDE instead and keep it that way.
     img=$(unattend_image)
-    qemu-system-x86_64 -name flightdeck-win10 -enable-kvm -cpu host -smp 4 -m 6G -machine pc \
-      -drive "file=$disk,if=ide,format=qcow2" -cdrom "$iso" -boot once=d,menu=off \
-      -drive "if=floppy,format=raw,file=$img" \
+    # q35: AHCI disk/DVD and no floppy controller (a floppy drive, even empty, made Windows
+    # Setup fail with 0x80070570 while applying the image).
+    qemu-system-x86_64 -name flightdeck-win10 -enable-kvm -cpu "$cpu" -smp 4 -m 6G -machine q35 \
+      -drive "if=none,id=hd,file=$disk,format=qcow2" -device ide-hd,drive=hd,bus=ide.0 \
+      -drive "if=none,id=dvd,file=$iso,format=raw,media=cdrom,readonly=on" -device ide-cd,drive=dvd,bus=ide.1 \
+      -drive "if=none,id=unattend,file=$img,format=raw,media=cdrom,readonly=on" -device ide-cd,drive=unattend,bus=ide.2 \
+      -boot once=d,menu=off \
       -netdev user,id=n0,hostfwd=tcp:127.0.0.1:7799-:7799 -device e1000,netdev=n0 \
       -vga std -display none -usb -device usb-tablet \
       -rtc base=utc -qmp "unix:$qmp,server,nowait" -pidfile "$pidfile" -daemonize
@@ -51,8 +49,8 @@ case "${1:-}" in
     ;;
   start)
     [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
-    qemu-system-x86_64 -name flightdeck-win10 -enable-kvm -cpu host -smp 4 -m 6G -machine pc \
-      -drive "file=$disk,if=ide,format=qcow2" \
+    qemu-system-x86_64 -name flightdeck-win10 -enable-kvm -cpu "$cpu" -smp 4 -m 6G -machine q35 \
+      -drive "if=none,id=hd,file=$disk,format=qcow2" -device ide-hd,drive=hd,bus=ide.0 \
       -netdev user,id=n0,hostfwd=tcp:127.0.0.1:7799-:7799 -device e1000,netdev=n0 \
       -vga std -display none -usb -device usb-tablet \
       -rtc base=utc -qmp "unix:$qmp,server,nowait" -pidfile "$pidfile" -daemonize
