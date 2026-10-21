@@ -141,6 +141,20 @@ else.
   read the `.so` names out of the binary (`strings`) to find run-time deps; list GPU drivers,
   portals and `xdg-utils` as optional.
 - `.gitignore` the package build artefacts (`src/`, `pkg/`, `*.pkg.tar*`, logs).
+- Ship a generic Linux archive too: binary, `locales/`, desktop entry, icons, an `install`
+  script (plain `install(1)` commands into `$PREFIX`, relative paths, no comments) and a
+  `run-in-place` script that points the config/data/locale variables at the archive folder.
+- Windows from Linux: cross-compile with the GNU target, GUI subsystem plus `AttachConsole` so
+  stdout logging survives, `.ico` rendered from the SVG, MSI built with `wixl`. Offer both a
+  self-contained MSI and a portable zip whose small `flightdeck-setup.msi` installs from the
+  files beside it: that needs the files marked noncompressed, the install root mapped to the
+  MSI's folder (`Name:.`) and the "compressed" bit cleared in the summary stream.
+- Verify Windows artefacts twice: first under Wine in a throw-away prefix (fast; one prefix per
+  installer, since mixing installs with shared component ids leaves files behind), then in a
+  real Windows VM driven through the app's own MCP server with the port forwarded to the host.
+- Keep VM disks, ISO copies and multi-gigabyte extracts off the system volume. A sustained
+  write load on a btrfs/LUKS NVMe at 90% full stalled the whole desktop; use a separate disk,
+  a raw no-CoW image opened with direct I/O, a bandwidth cap and idle I/O priority for QEMU.
 - Include a `LICENSE` file matching `Cargo.toml`.
 
 ## 10. How to work
