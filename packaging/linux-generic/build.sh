@@ -11,7 +11,7 @@ cargo build --release --locked -p cockpit
 rm -rf "$stage" && mkdir -p "$stage/locales" "$stage/icons" dist
 install -m755 target/release/flightdeck "$stage/flightdeck"
 install -m644 locales/*.ftl "$stage/locales/"
-install -m644 packaging/flightdeck.desktop LICENSE README.md "$stage/"
+install -m644 packaging/flightdeck.desktop LICENSE README.md docs/USAGE.md "$stage/"
 install -m644 assets/icon.svg "$stage/icons/flightdeck.svg"
 for s in 16 22 24 32 48 64 128 256 512; do
   rsvg-convert -w "$s" -h "$s" assets/icon.svg -o "$stage/icons/flightdeck-$s.png"

@@ -1,174 +1,37 @@
 # Flightdeck
 
-A fast, keyboard-first cockpit for **Camunda 7**, written in Rust (egui). It replaces the parts of
-Camunda Cockpit you use every day and fixes the things that make Cockpit painful: unlimited smooth
-zoom, keyboard navigation everywhere, every BPMN element parameter visible, element search inside
-the diagram, a real instance search language, token modification and batch operations on the
-Community Edition REST API.
+A fast, keyboard-first cockpit for Camunda 7. Native app, written in Rust.
 
-![definition view](docs/definition-dark.png)
-![instance view](docs/instance-dark.png)
-![search](docs/search-dark.png)
+![Flightdeck demo](docs/demo.gif)
+
+Open a process, zoom without limits, find an instance by business key and jump to it, inspect
+the element, step into the instance, change the language. All of it from the keyboard or the
+mouse, against any Camunda 7 engine's REST API.
+
+## Install
+
+| Platform | Package |
+|---|---|
+| Arch Linux | `cd packaging/arch && makepkg -si` |
+| Other Linux | `packaging/linux-generic/build.sh`, then `./install` from the archive, or `./run-in-place` |
+| Windows | `packaging/windows/build.sh` (cross-built from Linux): `.msi`, or the `.zip` with `run-in-place.ps1` |
+
+Then run `flightdeck`, add a connection (REST URL, user, password) and press Enter.
 
 ## Highlights
 
-- **Diagram** – zoom 0.5 % … 20 000 % at the cursor, smooth animated camera, inertial panning,
-  keyboard pan/zoom (arrows / WASD / HJKL, `+` `−` `0` `1` `F`), level-of-detail rendering that
-  keeps 600-node diagrams fluid, minimap, element ids and grid overlays, light and dark themes.
-- **Element inspector** – id, name, documentation, `asyncBefore/After`, delegate/class/expression,
-  topic, called element, timer/message/error/signal definitions (with humanised durations),
-  gateway outgoing conditions in one table, multi-instance settings, input/output mappings,
-  listeners, field injections, extension properties, form fields, raw XML. All click-to-copy.
-- **Find element** (`Ctrl+F`) – by name, id, type, expression, implementation, documentation;
-  non-matches are dimmed, `Enter` / `Shift+Enter` jump between matches, type filters.
-- **Definitions** – running and incident counts per definition and per activity (badges on the
-  diagram); click a badge to list the instances waiting there; version switcher.
-- **Instances** – live tokens with glow, historic path (visited elements and inferred traversed
-  flows), timers with countdown, incidents, variables (JSON tree, in-value search, typed editing,
-  undo), user tasks (assign, claim, due date, complete), jobs (execute, retries, due date),
-  external tasks (retries, unlock), called instances and ancestors, an activity timeline,
-  token modification (start before/after, cancel, move) and restart of finished instances.
-- **Search** – one query language with autocompletion, automatically routed to the runtime or
-  history API: `def:order var.amount>1000 bk:ORD-* exec:Task_Validate state:finished started>-7d`.
-  Variable values as result columns, row preview, saved searches, bulk suspend / activate /
-  retry / delete / set variable as Camunda batches.
-- **Incidents** and **Batches** places, a command palette (`Ctrl+K`), browser-like tabs with
-  per-tab history (`Alt+←/→`, `Ctrl+T/W/Tab`), toasts with undo, a shortcut cheat-sheet (`?`).
-- **Offline viewer** – `flightdeck some.bpmn` opens a diagram without an engine.
+- Unlimited, smooth zoom at the cursor; labels never flicker or re-wrap.
+- Everything reachable by keyboard: `?` lists the shortcuts.
+- Ctrl+F finds elements and running instances (by business key or id) and shows why each match is highlighted.
+- Every BPMN attribute, every variable, incident, job and task, with one-click copy.
+- Token modification, batch operations, saved searches, light and dark theme.
+- English, Russian and German; add a language by dropping a Fluent file in `locales/`.
+- Built-in MCP server so an AI agent can operate the engine and the UI.
 
-## AI agents (MCP)
+## More
 
-Flightdeck has a built-in [MCP](https://modelcontextprotocol.io) server. Toggle it with the
-`MCP` pill in the top bar, in *Settings → MCP server*, or start with `flightdeck --mcp`
-(default port 7788, optional bearer token). It exposes 55 tools: engine tools
-(`list_definitions`, `get_element`, `find_elements`, `search_instances`, `get_instance`,
-`get_variables`, `set_variable`, `retry_job`, `modify_instance`, `batch`, …) and UI tools
-(`ui_state`, `ui_navigate`, `ui_select`, `ui_fit`, `ui_find`, `ui_dock`, `ui_filter`,
-`ui_key`, `ui_type`, `ui_command`, `ui_screenshot`, `ui_confirm`, …). Destructive tools need
-`confirm: true`.
+- [Usage, shortcuts, settings, packaging and the MCP server](docs/USAGE.md)
+- [Design](DESIGN.md)
+- [Engineering principles](docs/RUST_DESKTOP_PRINCIPLES.md)
 
-```sh
-# Claude Code (user scope) — the repo also ships a project-scoped .mcp.json
-claude mcp add --transport http flightdeck http://127.0.0.1:7788/mcp
-# stdio-only clients
-flightdeck --mcp-stdio http://127.0.0.1:7788/mcp
-# exercise the server like an agent would
-python3 scripts/mcp_smoke.py
-```
-
-## Build and run
-
-```sh
-cargo build --release
-./target/release/flightdeck                       # connection screen
-./target/release/flightdeck --url http://localhost:8080/engine-rest --user demo --password demo
-./target/release/flightdeck path/to/diagram.bpmn   # offline viewer
-```
-
-### Install on Arch Linux
-
-A full install puts three things in place: the binary in `/usr/bin`, the desktop entry in
-`/usr/share/applications`, and the icon in the hicolor theme. On Wayland the last two are what
-give the window its icon: the compositor looks the app id `flightdeck` up in the desktop entry.
-
-```sh
-cd packaging/arch && makepkg -si     # builds from this checkout; needs cargo and librsvg
-```
-
-The PKGBUILD lists the run-time libraries the binary loads dynamically (Vulkan loader, Wayland,
-xkbcommon, the X11 fallback) and optional ones (a Vulkan driver, portal for theme detection,
-xdg-utils for links). Edit `assets/icon.svg` and run `scripts/render-icon.sh` to refresh the
-embedded icon.
-
-The connection screen accepts a bare host, a Cockpit URL or the REST base URL and normalises it.
-Credentials are stored in the OS config directory only when "remember password" is ticked.
-
-Other flags: `--open def:<key> | instance:<id> | search:<query> | definitions | incidents`,
-`--dock N`, `--theme light|dark`, `--scale 1.25`, `--size 1600x1000`, `--screenshot out.png`,
-`--stats`, `--no-focus`, `--mcp`, `--mcp-port N`.
-
-Unlimited drags move the real cursor: through winit on X11, Windows and macOS, and through the
-`wp_pointer_warp_v1` protocol on Wayland (KWin 6.4+). Compositors without it keep ordinary drags.
-
-Directories: `--config-dir`/`--data-dir` or `FLIGHTDECK_CONFIG_DIR`/`FLIGHTDECK_DATA_DIR`
-(settings and crash log; persisted UI state). Give both or neither: a partial pair is refused
-at start-up. Without them the platform defaults are used (`~/.config/flightdeck` and
-`~/.local/share/flightdeck` on Linux). Development runs (`scripts/shot.sh`) always use a
-scratch pair so they never touch your real configuration.
-
-### Other packages
-
-- **Generic Linux archive** — `packaging/linux-generic/build.sh` produces
-  `dist/flightdeck-<version>-linux-<arch>.tar.gz`: the binary, `locales/`, the desktop entry,
-  icons, `LICENSE`, and two scripts. `install` copies everything under `$PREFIX`
-  (default `/usr/local`) with the right modes; `run-in-place` runs from the extracted folder with
-  `config/`, `data/` and `locales/` beside the binary (portable mode).
-- **Windows** — `packaging/windows/build.sh` cross-compiles from Linux (`x86_64-pc-windows-gnu`,
-  needs `mingw-w64-gcc`) into `dist/flightdeck-<version>-windows-x86_64.zip` (portable, with
-  `run-in-place.cmd`) and, when `msitools` is installed, `dist/flightdeck-<version>-x64.msi`
-  built with `wixl` (per-machine install into Program Files, Start-menu shortcut, language packs
-  beside the executable). The Windows build uses the GUI subsystem and attaches to the parent
-  console when started from one, so logging still goes to stdout.
-- **Windows test VM** — `packaging/windows/vm/run-vm.sh install <win10.iso>` installs Windows 10
-  unattended on QEMU/KVM; at first logon the guest fetches `setup.ps1` from the host, installs
-  the MSI silently and starts Flightdeck with `--mcp-host 0.0.0.0`, forwarded to
-  `127.0.0.1:7799`, so the app can be driven and screenshotted from the host through MCP.
-  Needs `qemu-desktop`, `mtools` and `msitools`.
-
-### Languages
-
-The interface ships in English, Russian and German as Fluent language packs
-(`locales/<tag>.ftl`, e.g. `ru-RU.ftl`). They are not compiled in: the app searches, in order,
-`<config dir>/locales`, `<data dir>/locales`, every `$XDG_DATA_DIRS/flightdeck/locales` (the
-package installs there) and the directory next to the executable (`cargo run` finds the repo's
-`locales/`). `--locale-dir DIR[:DIR…]` or `FLIGHTDECK_LOCALE_DIR` replace that search path.
-*Settings → Appearance → Language* offers “System” (the OS language, matched by full tag, then
-by language, falling back to English) and every pack found. To add a language, copy
-`en-US.ftl` to `<tag>.ftl` in your config directory's `locales/` folder, set `language-name`,
-and translate; untranslated messages fall back to English.
-
-Logs go to stdout (`flightdeck > flightdeck.log 2>&1` to keep them); panics are appended to
-`<config dir>/crash.log`. `RUST_LOG=debug` raises the level.
-
-Environment: `FLIGHTDECK_NO_FOCUS=1` opens the window without taking focus;
-`FLIGHTDECK_WINDOW_POS=x,y` sets the initial position (not on Wayland — `scripts/shot.sh`
-uses Xwayland to place test windows on the second monitor).
-
-## Keyboard
-
-| Keys | Action |
-|---|---|
-| Wheel / pinch, Shift+wheel | zoom at cursor, pan horizontally |
-| Alt (hold) | pan and zoom faster, ×2 by default (a small badge orbits the cursor while active) |
-
-Speeds are adjustable in *Settings → Diagram input*: a global zoom multiplier, separate mouse
-(wheel, pinch, dial) and keyboard (`+` `−`) multipliers, and the Alt factor (values below 1 turn
-Alt into a precision mode). Effective zoom speed = global × device, × Alt while held.
-| Drag, middle-drag, Space+drag | pan (flick for inertia; the pointer wraps at the view edge so a drag never runs out of room) |
-| Zoom dial (bottom left) | drag left/right to zoom without limit; wheel over it zooms too |
-| ↑↓←→ · WASD · HJKL | pan (hold to accelerate, Shift faster) |
-| `+` `−` · `0` · `1` · `F` · `Shift+F` | zoom · fit all · 100 % · fit selection · fit tokens |
-| Tab / Shift+Tab, Alt+→ / Alt+← | next element along the flow · follow outgoing/incoming flow |
-| Enter | inspect, drill into a call activity / called instance |
-| Ctrl+F · Ctrl+K · Ctrl+Shift+F | find element · command palette · instance search |
-| Ctrl+1…9 · Ctrl+B | dock tab · toggle dock |
-| Ctrl+T · Ctrl+W · Ctrl+Tab · Alt+←/→ | tabs and history |
-| R / F5 · Ctrl+Shift+P · Ctrl+Shift+T | refresh · pause auto-refresh · cycle theme (system / light / dark) |
-| `/` · `?` · Esc | focus filter · shortcuts · back out one level |
-
-## Project layout
-
-```
-crates/bpmn      BPMN 2.0 parser (model + DI + Camunda extensions), element search
-crates/camunda   async REST client for Camunda 7 (engine-rest)
-crates/cockpit   the egui application (binary `cockpit`)
-DESIGN.md        the design document every UI decision traces back to
-```
-
-## Tests
-
-```sh
-cargo test                                         # unit tests + headless UI smoke test (egui_kittest)
-FLIGHTDECK_BPMN_DIR=/path/to/bpmns cargo test -p bpmn  # parse real-world diagrams
-CAMUNDA_URL=http://localhost:8089/engine-rest cargo test -p camunda --test live
-```
+MIT licensed.
