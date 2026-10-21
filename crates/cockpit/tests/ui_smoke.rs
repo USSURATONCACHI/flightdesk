@@ -209,3 +209,30 @@ fn modified_shortcuts_are_not_shadowed_by_plain_ones() {
     let expect = 1.25f64.powf(0.5);
     assert!((z2 / z1 - expect).abs() < 1e-3, "Alt+`+` must use the Alt factor (0.5 → {expect:.4}), got {}", z2 / z1);
 }
+
+/// Every copy button in the inspector must copy and come back; in release builds the old code
+/// hung the app here (nested egui Context lock). Debug builds turn that hang into a panic after
+/// ten seconds, which this test would surface.
+#[test]
+fn inspector_copy_buttons_do_not_hang() {
+    load_english();
+    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn");
+    let ctx = egui::Context::default();
+    let mut app = App::new(&ctx, Settings::default(), 1.0);
+    app.offline = true;
+    app.navigate(cockpit::state::Nav::File { path: fixture.into() }, cockpit::state::NavMode::NewTab);
+    let mut harness = Harness::builder().with_size(egui::Vec2::new(1400.0, 900.0)).allow_missing_glyphs().build_ui_state(|ui, app: &mut App| app.frame(ui), app);
+    harness.run_steps(4);
+    call(harness.state_mut(), "ui_select", json!({"element_id": "Task_Approve"})).unwrap();
+    harness.run_steps(3);
+    let n = harness.get_all_by_label("Copy").count();
+    assert!(n >= 3, "expected copy buttons for id/name/type in the inspector, found {n}");
+    for i in 0..n {
+        let btn = harness.get_all_by_label("Copy").nth(i).unwrap();
+        btn.click();
+        harness.run_steps(2);
+    }
+    // Still responsive: a further frame and a state query work.
+    let st = call(harness.state_mut(), "ui_state", json!({})).unwrap();
+    assert_eq!(st["place"]["diagram"]["selection"]["element_id"], "Task_Approve");
+}

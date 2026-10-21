@@ -148,6 +148,12 @@ else.
 - Investigate before changing: when a user reports "X looks wrong", first check the data (via
   the MCP tools or the backend) to see whether the display is correct and the model is
   surprising; explain that distinction honestly.
+- Fix classes, not instances. When a bug is a *shape* (a lock taken inside another lock's
+  closure, a plain key check shadowing a modified one, a default path in library code), grep
+  for the shape everywhere and add a test that scans the source for it, so the next occurrence
+  fails in CI instead of hanging for a user. Example: egui's `Context` is one `RwLock`; any
+  `ctx.input`/`data_mut`/`memory`/`request_repaint` call made inside the closure of another
+  accessor deadlocks silently in release builds. Read values first, then take the lock.
 - Reproduce, fix at the root cause, add the test, run build + clippy + full tests, then commit
   with a message that says what changed and why. Small, frequent commits.
 - Report outcomes faithfully: say what was verified and how (test, screenshot, live check),

@@ -28,13 +28,18 @@ pub fn cell(ui: &mut egui::Ui, text: impl Into<egui::RichText>) -> egui::Respons
 pub fn copy_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
     let size = egui::Vec2::splat(16.0);
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-    let resp = resp.on_hover_text(format!("{}\n{}", crate::t!("common-copy"), crate::util::ellipsize(text, 120)));
+    let label = crate::t!("common-copy");
+    // Accessible name: screen readers and the UI tests find the button by it.
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &label));
+    let resp = resp.on_hover_text(format!("{label}\n{}", crate::util::ellipsize(text, 120)));
     let flash_id = resp.id.with("copied-at");
+    // Read the clock *before* taking the data lock: egui's Context is one RwLock and calling
+    // `ui.input` inside `data_mut` re-locks it on the same thread (a silent hang in release).
+    let now = ui.input(|i| i.time);
     if resp.clicked() {
         ui.ctx().copy_text(text.to_string());
-        ui.ctx().data_mut(|d| d.insert_temp(flash_id, ui.input(|i| i.time)));
+        ui.ctx().data_mut(|d| d.insert_temp(flash_id, now));
     }
-    let now = ui.input(|i| i.time);
     let flashed = ui.ctx().data(|d| d.get_temp::<f64>(flash_id)).map(|t| now - t < 1.0).unwrap_or(false);
     let visuals = ui.style().interact(&resp);
     let color = if flashed { crate::theme::COMPLETED } else if resp.hovered() { visuals.fg_stroke.color } else { ui.visuals().weak_text_color() };
