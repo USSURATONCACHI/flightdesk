@@ -1,4 +1,5 @@
 //! Flightdeck: a fast, keyboard-first cockpit for Camunda 7.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 use cockpit::{app, mcp, paths, settings, state, theme};
 
@@ -25,6 +26,7 @@ struct Args {
     locale_dirs: Vec<PathBuf>,
     mcp: bool,
     mcp_port: Option<u16>,
+    mcp_host: Option<String>,
     mcp_stdio: Option<String>,
 }
 
@@ -51,6 +53,7 @@ fn parse_args() -> Args {
             "--locale-dir" => a.locale_dirs.extend(it.next().map(|v| paths::split_dir_list(&v)).unwrap_or_default()),
             "--mcp" => a.mcp = true,
             "--mcp-port" => a.mcp_port = it.next().and_then(|v| v.parse().ok()),
+            "--mcp-host" => a.mcp_host = it.next(),
             "--mcp-stdio" => a.mcp_stdio = Some(it.next().unwrap_or_else(|| "http://127.0.0.1:7788/mcp".into())),
             "--size" => {
                 a.size = it.next().and_then(|v| {
@@ -59,7 +62,7 @@ fn parse_args() -> Args {
                 })
             }
             "-h" | "--help" => {
-                println!("flightdeck [--config-dir DIR --data-dir DIR] [--locale-dir DIR[:DIR…]] [--mcp] [--mcp-port N] [--mcp-stdio URL] [--no-focus] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
+                println!("flightdeck [--config-dir DIR --data-dir DIR] [--locale-dir DIR[:DIR…]] [--mcp] [--mcp-port N] [--mcp-host ADDR] [--mcp-stdio URL] [--no-focus] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
                 std::process::exit(0);
             }
             other => {
@@ -101,7 +104,20 @@ fn install_crash_log(path: Option<PathBuf>) {
     }));
 }
 
+/// With the GUI subsystem Windows gives the process no console; when it was started from one,
+/// attach to it so logs still appear on stdout as they do everywhere else.
+#[cfg(windows)]
+fn attach_parent_console() {
+    use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+    // Safety: plain Win32 call with a documented constant; failure (no parent console) is fine.
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
 fn main() -> eframe::Result<()> {
+    #[cfg(windows)]
+    attach_parent_console();
     let args = parse_args();
     // Directories: --config-dir/--data-dir, else FLIGHTDECK_CONFIG_DIR/FLIGHTDECK_DATA_DIR, else
     // the platform defaults. A partial pair is refused (see `paths::resolve`).
@@ -195,6 +211,9 @@ fn main() -> eframe::Result<()> {
             }
             app.startup_dock = args.dock;
             app.stats = args.stats;
+            if let Some(h) = &args.mcp_host {
+                app.mcp_host = h.clone();
+            }
             if let Some(p) = args.mcp_port {
                 app.settings.mcp_port = p;
             }

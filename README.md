@@ -96,6 +96,25 @@ at start-up. Without them the platform defaults are used (`~/.config/flightdeck`
 `~/.local/share/flightdeck` on Linux). Development runs (`scripts/shot.sh`) always use a
 scratch pair so they never touch your real configuration.
 
+### Other packages
+
+- **Generic Linux archive** — `packaging/linux-generic/build.sh` produces
+  `dist/flightdeck-<version>-linux-<arch>.tar.gz`: the binary, `locales/`, the desktop entry,
+  icons, `LICENSE`, and two scripts. `install` copies everything under `$PREFIX`
+  (default `/usr/local`) with the right modes; `run-in-place` runs from the extracted folder with
+  `config/`, `data/` and `locales/` beside the binary (portable mode).
+- **Windows** — `packaging/windows/build.sh` cross-compiles from Linux (`x86_64-pc-windows-gnu`,
+  needs `mingw-w64-gcc`) into `dist/flightdeck-<version>-windows-x86_64.zip` (portable, with
+  `run-in-place.cmd`) and, when `msitools` is installed, `dist/flightdeck-<version>-x64.msi`
+  built with `wixl` (per-machine install into Program Files, Start-menu shortcut, language packs
+  beside the executable). The Windows build uses the GUI subsystem and attaches to the parent
+  console when started from one, so logging still goes to stdout.
+- **Windows test VM** — `packaging/windows/vm/run-vm.sh install <win10.iso>` installs Windows 10
+  unattended on QEMU/KVM; at first logon the guest fetches `setup.ps1` from the host, installs
+  the MSI silently and starts Flightdeck with `--mcp-host 0.0.0.0`, forwarded to
+  `127.0.0.1:7799`, so the app can be driven and screenshotted from the host through MCP.
+  Needs `qemu-desktop`, `mtools` and `msitools`.
+
 ### Languages
 
 The interface ships in English, Russian and German as Fluent language packs

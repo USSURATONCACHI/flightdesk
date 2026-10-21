@@ -1,0 +1,6 @@
+#!/bin/bash
+cd "$(dirname "$0")"
+export FLIGHTDECK_CONFIG_DIR="${FLIGHTDECK_CONFIG_DIR:-config}"
+export FLIGHTDECK_DATA_DIR="${FLIGHTDECK_DATA_DIR:-data}"
+export FLIGHTDECK_LOCALE_DIR="${FLIGHTDECK_LOCALE_DIR:-locales}"
+exec ./flightdeck "$@"

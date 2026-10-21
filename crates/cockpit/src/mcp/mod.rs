@@ -60,8 +60,10 @@ pub struct McpServer {
 }
 
 impl McpServer {
-    pub fn start(port: u16, token: Option<String>, queue: Queue, ctx: egui::Context) -> std::io::Result<Self> {
-        let server = tiny_http::Server::http(("127.0.0.1", port)).map_err(|e| std::io::Error::other(e.to_string()))?;
+    /// `host` is the bind address: `127.0.0.1` normally; `0.0.0.0` when a VM or container needs
+    /// to reach the server from outside (then set a bearer token).
+    pub fn start(host: &str, port: u16, token: Option<String>, queue: Queue, ctx: egui::Context) -> std::io::Result<Self> {
+        let server = tiny_http::Server::http((host, port)).map_err(|e| std::io::Error::other(e.to_string()))?;
         let server = Arc::new(server);
         let stats = Arc::new(Mutex::new(McpStats::default()));
         let s2 = server.clone();

@@ -8,7 +8,9 @@
 #[cfg(target_os = "linux")]
 pub mod wayland;
 
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
+#[cfg(target_os = "linux")]
+use raw_window_handle::RawWindowHandle;
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle};
 use std::sync::{Mutex, OnceLock};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +51,7 @@ struct State {
     platform: Platform,
     #[cfg(target_os = "linux")]
     wayland: Option<wayland::WaylandWarp>,
+    #[cfg(target_os = "linux")]
     wayland_error: Option<String>,
 }
 
@@ -63,10 +66,12 @@ pub fn init(window: &dyn HasWindowHandle, display: &dyn HasDisplayHandle) {
     let dh = display.display_handle().map(|h| h.as_raw());
     let wh = window.window_handle().map(|h| h.as_raw());
     let platform = dh.as_ref().map(Platform::from_display_handle).unwrap_or(Platform::Other);
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut))]
     let mut st = State {
         platform,
         #[cfg(target_os = "linux")]
         wayland: None,
+        #[cfg(target_os = "linux")]
         wayland_error: None,
     };
     #[cfg(target_os = "linux")]

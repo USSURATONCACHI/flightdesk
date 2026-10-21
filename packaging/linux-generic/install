@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+cd "$(dirname "$0")"
+prefix="${PREFIX:-/usr/local}"
+install -Dm755 flightdeck "$prefix/bin/flightdeck"
+install -Dm644 locales/*.ftl -t "$prefix/share/flightdeck/locales"
+install -Dm644 flightdeck.desktop "$prefix/share/applications/flightdeck.desktop"
+install -Dm644 icons/flightdeck.svg "$prefix/share/icons/hicolor/scalable/apps/flightdeck.svg"
+for s in 16 22 24 32 48 64 128 256 512; do
+  install -Dm644 "icons/flightdeck-$s.png" "$prefix/share/icons/hicolor/${s}x${s}/apps/flightdeck.png"
+done
+install -Dm644 LICENSE "$prefix/share/licenses/flightdeck/LICENSE"
+install -Dm644 README.md "$prefix/share/doc/flightdeck/README.md"

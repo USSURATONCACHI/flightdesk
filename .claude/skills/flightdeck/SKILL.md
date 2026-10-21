@@ -6,7 +6,7 @@ description: Operate a Camunda 7 engine and the Flightdeck desktop cockpit throu
 # Flightdeck (Camunda 7 cockpit) via MCP
 
 The Flightdeck app must be running with its MCP server enabled (top bar pill "MCP :7788", or
-Settings → MCP server, or start it with `flightdeck --mcp`). The server listens on
+Settings → MCP server, or start it with `flightdeck --mcp`; `--mcp-host 0.0.0.0` exposes it beyond loopback, e.g. from a VM — set a bearer token then). The server listens on
 `http://127.0.0.1:7788/mcp` (Streamable HTTP). If tools are missing from this session, the
 project `.mcp.json` registers it; approve it or run
 `claude mcp add --transport http flightdeck http://127.0.0.1:7788/mcp` and restart the session.

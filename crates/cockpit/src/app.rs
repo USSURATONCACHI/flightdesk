@@ -95,6 +95,8 @@ pub struct App {
     pub stats: bool,
     frame_times: Vec<f32>,
     pub mcp: Option<crate::mcp::McpServer>,
+    /// Bind address for the MCP server (`--mcp-host`; default loopback).
+    pub mcp_host: String,
     pub mcp_queue: crate::mcp::Queue,
     pub mcp_error: Option<String>,
     pub synthetic_events: Vec<egui::Event>,
@@ -158,6 +160,7 @@ impl App {
             stats: false,
             frame_times: Vec::new(),
             mcp: None,
+            mcp_host: "127.0.0.1".into(),
             mcp_queue: Default::default(),
             mcp_error: None,
             synthetic_events: Vec::new(),
@@ -345,7 +348,7 @@ impl App {
         }
         let Some(ctx) = self.ctx.clone() else { return };
         let token = if self.settings.mcp_token.trim().is_empty() { None } else { Some(self.settings.mcp_token.trim().to_string()) };
-        match crate::mcp::McpServer::start(self.settings.mcp_port, token, self.mcp_queue.clone(), ctx) {
+        match crate::mcp::McpServer::start(&self.mcp_host, self.settings.mcp_port, token, self.mcp_queue.clone(), ctx) {
             Ok(s) => {
                 self.mcp_error = None;
                 self.toasts.push(ToastKind::Success, t!("toast-mcp-listening", url = s.url()));
