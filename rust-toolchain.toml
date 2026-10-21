@@ -1,0 +1,6 @@
+# One compiler and lint set for local builds and CI. Bump deliberately (and fix new lints).
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["x86_64-pc-windows-gnu"]

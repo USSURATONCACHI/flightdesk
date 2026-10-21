@@ -29,7 +29,9 @@ optdepends=(
   'xdg-utils: open links in the browser'
 )
 makedepends=('cargo' 'librsvg')
-options=('!lto')
+# !debug and the environment reset in build() keep the compiler invocation identical to a plain
+# `cargo build --release`, so the shared target/ is reused instead of rebuilt.
+options=('!lto' '!debug')
 source=()
 sha256sums=()
 
@@ -40,17 +42,27 @@ pkgver() {
   sed -n 's/^version = "\(.*\)"/\1/p' "$_repo/Cargo.toml" | head -n1
 }
 
+# Packaging only: tests and lints are the developer's and CI's job, not makepkg's. The build
+# reuses the repository's target/ (or $CARGO_TARGET_DIR), so an already built tree is not
+# compiled again. FLIGHTDECK_PREBUILT=/path/to/flightdeck packages a ready binary without cargo
+# (CI builds once on an old glibc and reuses that binary here).
+_target_dir() { printf '%s' "${CARGO_TARGET_DIR:-$_repo/target}"; }
+
 prepare() {
+  [ -n "${FLIGHTDECK_PREBUILT:-}" ] && return 0
   cd "$_repo"
-  export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 }
 
 build() {
   cd "$_repo"
-  export RUSTUP_TOOLCHAIN=stable
-  export CARGO_TARGET_DIR="$srcdir/target"
-  cargo build --release --locked --frozen -p cockpit
+  if [ -z "${FLIGHTDECK_PREBUILT:-}" ]; then
+    export CARGO_TARGET_DIR="$(_target_dir)"
+    # makepkg's flags and its per-run SOURCE_DATE_EPOCH (tracked by ring's build script) would
+    # make cargo rebuild the whole tree; build exactly as `cargo build --release` does.
+    env -u RUSTFLAGS -u CFLAGS -u CXXFLAGS -u CPPFLAGS -u LDFLAGS -u LTOFLAGS -u SOURCE_DATE_EPOCH \
+      cargo build --release --locked --frozen -p cockpit
+  fi
   # hicolor rasters from the SVG master
   local s
   for s in 16 22 24 32 48 64 128 256 512; do
@@ -58,17 +70,9 @@ build() {
   done
 }
 
-check() {
-  cd "$_repo"
-  export RUSTUP_TOOLCHAIN=stable
-  export CARGO_TARGET_DIR="$srcdir/target"
-  # UI smoke tests render headlessly through wgpu; they fall back to a software adapter.
-  cargo test --release --locked --frozen --workspace
-}
-
 package() {
   cd "$_repo"
-  install -Dm755 "$srcdir/target/release/flightdeck" "$pkgdir/usr/bin/flightdeck"
+  install -Dm755 "${FLIGHTDECK_PREBUILT:-$(_target_dir)/release/flightdeck}" "$pkgdir/usr/bin/flightdeck"
   install -Dm644 packaging/flightdeck.desktop "$pkgdir/usr/share/applications/flightdeck.desktop"
   install -Dm644 assets/icon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/flightdeck.svg"
   local s

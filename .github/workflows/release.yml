@@ -1,0 +1,47 @@
+# Push a tag vX.Y.Z (matching the version in Cargo.toml) to build every package and publish a
+# GitHub Release with the files attached:
+#   git tag v0.3.0 && git push origin v0.3.0
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  version:
+    name: Tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/ci/check-version.sh "${{ github.ref_name }}"
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+
+  publish:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS && cat SHA256SUMS
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Flightdeck ${TAG#v}" \
+            --generate-notes \
+            --verify-tag

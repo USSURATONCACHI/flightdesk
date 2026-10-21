@@ -7,9 +7,10 @@ version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
 arch=$(uname -m)
 name="flightdeck-$version-linux-$arch"
 stage="dist/$name"
-cargo build --release --locked -p cockpit
+target_dir=${CARGO_TARGET_DIR:-target}
+[ -n "${SKIP_BUILD:-}" ] || cargo build --release --locked -p cockpit
 rm -rf "$stage" && mkdir -p "$stage/locales" "$stage/icons" dist
-install -m755 target/release/flightdeck "$stage/flightdeck"
+install -m755 "$target_dir/release/flightdeck" "$stage/flightdeck"
 install -m644 locales/*.ftl "$stage/locales/"
 install -m644 packaging/flightdeck.desktop LICENSE README.md docs/USAGE.md "$stage/"
 install -m644 assets/icon.svg "$stage/icons/flightdeck.svg"

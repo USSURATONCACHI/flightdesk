@@ -1,0 +1,130 @@
+# Builds, lints, tests and packages Flightdeck for every supported platform.
+# Called by ci.yml (branch pushes and pull requests) and release.yml (version tags).
+#
+# One target directory serves everything: lint, tests, the Linux release binary and the Windows
+# cross build all run in the same job, and the Arch package reuses that job's Linux binary instead
+# of compiling again; the Wine smoke test only installs and runs the built Windows packages. The job runs in Debian 12 (glibc 2.36) so the Linux binary works on older
+# distributions too. Swatinem/rust-cache keeps ~/.cargo and target/ between runs; caches are saved
+# only on the default branch, because tag builds can read default-branch caches but not each other's.
+name: build
+
+on:
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build:
+    name: Lint, test, package (Linux + Windows)
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    steps:
+      - name: System packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config python3 \
+            gcc-mingw-w64-x86-64 msitools wixl librsvg2-bin imagemagick zip unzip \
+            mesa-vulkan-drivers libvulkan1 libegl1 libgl1 \
+            libwayland-client0 libxkbcommon0 libxkbcommon-x11-0 libx11-6 libxcursor1 libxi6 libxrandr2
+
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (pinned in rust-toolchain.toml)
+        run: |
+          curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          "$HOME/.cargo/bin/rustup" toolchain install
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: flightdeck
+          save-if: ${{ github.ref_name == github.event.repository.default_branch }}
+
+      - name: Clippy (Linux and Windows targets)
+        run: |
+          cargo clippy --workspace --all-targets --release -- -D warnings
+          cargo clippy -p cockpit --release --target x86_64-pc-windows-gnu -- -D warnings
+
+      - name: Tests
+        # Release profile on purpose: the test build then shares every dependency with the
+        # release binary below. UI tests render headlessly through Mesa's lavapipe.
+        run: cargo test --workspace --release --locked
+
+      - name: Linux archive
+        run: packaging/linux-generic/build.sh
+
+      - name: Windows MSI and portable zip
+        run: packaging/windows/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-linux-windows
+          path: |
+            dist/flightdeck-*-linux-*.tar.gz
+            dist/flightdeck-*-windows-x86_64.zip
+            dist/flightdeck-*-x64.msi
+          if-no-files-found: error
+
+  wine-smoke:
+    name: Windows packages under Wine
+    # Debian 13 for Wine 10: the Rust std on Windows imports bcryptprimitives.dll, which Wine 8
+    # (Debian 12) lacks. Tests the built packages only; nothing is compiled here.
+    needs: build
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: System packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates git python3 unzip wine wine64 xvfb xauth \
+            mesa-vulkan-drivers libvulkan1 libegl1 libgl1 \
+            libwayland-client0 libxkbcommon0 libxkbcommon-x11-0 libx11-6 libxcursor1 libxi6 libxrandr2
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-linux-windows
+          path: dist
+
+      - name: Install, run and uninstall both MSIs
+        run: |
+          (cd dist && unzip -q flightdeck-*-windows-x86_64.zip)
+          scripts/ci/wine-smoke.sh dist
+
+  arch:
+    name: Arch package (from the Linux binary)
+    needs: build
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: System packages
+        run: pacman -Syu --noconfirm --needed git librsvg
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-linux-windows
+          path: dist
+
+      - name: makepkg
+        run: |
+          tar -xzf dist/flightdeck-*-linux-*.tar.gz -C dist
+          bin=$(ls -d "$PWD"/dist/flightdeck-*-linux-*/flightdeck)
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          # -d: makedepends (cargo) are not needed when packaging the prebuilt binary
+          su builder -c "cd packaging/arch && FLIGHTDECK_PREBUILT='$bin' PKGDEST='$PWD/dist/arch' makepkg -d -f --nocheck --noconfirm"
+          rm -f dist/arch/*-debug-*.pkg.tar.zst
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-arch
+          path: dist/arch/*.pkg.tar.zst
+          if-no-files-found: error

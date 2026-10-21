@@ -250,10 +250,8 @@ pub fn date_value(v: &str) -> Option<String> {
                 Local.from_local_datetime(&d).single()?
             } else if let Ok(d) = NaiveDateTime::parse_from_str(v, "%Y-%m-%dT%H:%M:%S") {
                 Local.from_local_datetime(&d).single()?
-            } else if let Some(d) = crate::util::parse_time(v) {
-                d.with_timezone(&Local)
             } else {
-                return None;
+                crate::util::parse_time(v)?.with_timezone(&Local)
             }
         }
     };

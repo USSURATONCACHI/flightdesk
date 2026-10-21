@@ -72,7 +72,7 @@ A full install puts three things in place: the binary in `/usr/bin`, the desktop
 give the window its icon: the compositor looks the app id `flightdeck` up in the desktop entry.
 
 ```sh
-cd packaging/arch && makepkg -si     # builds from this checkout; needs cargo and librsvg
+cd packaging/arch && makepkg -si     # packages this checkout; reuses target/, runs no tests
 ```
 
 The PKGBUILD lists the run-time libraries the binary loads dynamically (Vulkan loader, Wayland,
@@ -121,6 +121,29 @@ scratch pair so they never touch your real configuration.
   the MSI silently and starts Flightdeck with `--mcp-host 0.0.0.0`, forwarded to
   `127.0.0.1:7799`, so the app can be driven and screenshotted from the host through MCP.
   Needs `qemu-desktop`, `mtools` and `msitools`.
+
+### Releases (GitHub Actions)
+
+`.github/workflows/` holds three workflows:
+
+- `build.yml` (reusable) lints, tests and packages everything. One job in Debian 12 (glibc 2.36,
+  so the Linux binary runs on older distributions) builds the Linux archive and the Windows MSI
+  and zip from a single target directory and smoke-tests the Windows packages under Wine; a
+  second job packages the Arch `.pkg.tar.zst` from that same Linux binary
+  (`FLIGHTDECK_PREBUILT` in the PKGBUILD) instead of compiling again.
+- `ci.yml` runs it on every branch push and pull request. Runs on the default branch also save
+  the Rust build cache, which release builds then reuse (a tag can read default-branch caches,
+  not other tags').
+- Packaging never runs tests or lints: that is the developer's and CI's job. The PKGBUILD and
+  the build scripts reuse the repository's `target/` (or `$CARGO_TARGET_DIR`); the PKGBUILD builds
+  with the same compiler flags as plain `cargo build --release` (it clears makepkg's `*FLAGS` and
+  `SOURCE_DATE_EPOCH` for cargo), so an already built tree is packaged in seconds. The Rust
+  toolchain is pinned in `rust-toolchain.toml` for local builds and CI alike.
+- `release.yml` runs on tags `v*`: checks the tag equals the `Cargo.toml` version, builds, and
+  publishes a GitHub Release with all packages and `SHA256SUMS`.
+
+To release: bump `version` in `Cargo.toml`, commit, push, then
+`git tag v0.3.0 && git push origin v0.3.0`.
 
 ### Languages
 

@@ -1,0 +1,16 @@
+# Every push to a branch and every pull request: full lint, test and packaging run.
+# Runs on the default branch also keep the build cache warm for release tags.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml

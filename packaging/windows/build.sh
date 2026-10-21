@@ -12,7 +12,7 @@ if [ -z "${SKIP_BUILD:-}" ]; then
   rustup target list --installed | grep -q "$target" || rustup target add "$target"
   cargo build --release --locked -p cockpit --target "$target"
 fi
-exe="target/$target/release/flightdeck.exe"
+exe="${CARGO_TARGET_DIR:-target}/$target/release/flightdeck.exe"
 if [ ! -f "$exe" ] && [ -n "${SKIP_BUILD:-}" ]; then
   # Re-staging without a build: take the executable from the previous archive.
   exe=$(mktemp -d)/flightdeck.exe
@@ -25,10 +25,11 @@ cp locales/*.ftl "$stage/locales/"
 cp LICENSE "$stage/LICENSE.txt"
 cp README.md "$stage/README.md"; cp docs/USAGE.md "$stage/USAGE.md"
 cp packaging/windows/run-in-place.cmd packaging/windows/run-in-place.ps1 "$stage/"
-# .ico with the standard sizes, from the SVG master
+# .ico with the standard sizes, from the SVG master (ImageMagick 7 `magick` or 6 `convert`)
+im=$(command -v magick || command -v convert)
 tmp=$(mktemp -d)
 for s in 16 24 32 48 64 128 256; do rsvg-convert -w "$s" -h "$s" assets/icon.svg -o "$tmp/$s.png"; done
-magick "$tmp"/16.png "$tmp"/24.png "$tmp"/32.png "$tmp"/48.png "$tmp"/64.png "$tmp"/128.png "$tmp"/256.png "$stage/flightdeck.ico"
+"$im" "$tmp"/16.png "$tmp"/24.png "$tmp"/32.png "$tmp"/48.png "$tmp"/64.png "$tmp"/128.png "$tmp"/256.png "$stage/flightdeck.ico"
 rm -rf "$tmp"
 if command -v wixl >/dev/null; then
   # Self-contained installer (payload embedded) and the directory installer that goes into the
@@ -39,8 +40,11 @@ if command -v wixl >/dev/null; then
   # wixl always declares the package compressed; mark every file "noncompressed" (attribute
   # 8192) so msiexec reads the payload from the directory next to the .msi.
   python3 packaging/windows/mark-uncompressed.py "$stage/flightdeck-setup.msi"
+elif [ -n "${SKIP_MSI:-}" ]; then
+  echo "SKIP_MSI set: MSIs skipped" >&2
 else
-  echo "wixl not found (pacman -S msitools): MSI skipped" >&2
+  echo "wixl not found (Arch: msitools; Debian/Ubuntu: wixl + msitools). Set SKIP_MSI=1 to build only the zip." >&2
+  exit 1
 fi
 (cd dist && rm -f "$name.zip" && zip -qr "$name.zip" "$name")
 echo "dist/$name.zip"
