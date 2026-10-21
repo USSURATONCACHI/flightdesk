@@ -18,7 +18,7 @@ mkdir -p "$vmdir"
 unattend_image() {
   local img=$vmdir/unattend.img
   rm -f "$img"
-  mkfs.vfat -C "$img" 2880 >/dev/null
+  mkfs.vfat -C "$img" 1440 >/dev/null
   mcopy -i "$img" "$here/autounattend.xml" ::autounattend.xml
   echo "$img"
 }
@@ -41,7 +41,7 @@ case "${1:-}" in
     img=$(unattend_image)
     qemu-system-x86_64 -name flightdeck-win10 -enable-kvm -cpu host -smp 4 -m 6G -machine pc \
       -drive "file=$disk,if=ide,format=qcow2" -cdrom "$iso" -boot once=d,menu=off \
-      -drive "if=none,id=stick,format=raw,file=$img" -device usb-storage,drive=stick \
+      -drive "if=floppy,format=raw,file=$img" \
       -netdev user,id=n0,hostfwd=tcp:127.0.0.1:7799-:7799 -device e1000,netdev=n0 \
       -vga std -display none -usb -device usb-tablet \
       -rtc base=utc -qmp "unix:$qmp,server,nowait" -pidfile "$pidfile" -daemonize
