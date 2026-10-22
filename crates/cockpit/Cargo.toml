@@ -36,6 +36,8 @@ sys-locale = "0.3"
 wayland-client = "0.31"
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+x11rb = { version = "0.13", default-features = false }
+winit = { version = "0.30", default-features = false, features = ["x11"] }
 
 [dev-dependencies]
 egui_kittest.workspace = true

@@ -21,6 +21,7 @@ struct Args {
     dock: Option<usize>,
     stats: bool,
     no_focus: bool,
+    on_top: bool,
     config_dir: Option<PathBuf>,
     data_dir: Option<PathBuf>,
     locale_dirs: Vec<PathBuf>,
@@ -48,6 +49,7 @@ fn parse_args() -> Args {
             "--dock" => a.dock = it.next().and_then(|v| v.parse().ok()),
             "--stats" => a.stats = true,
             "--no-focus" => a.no_focus = true,
+            "--on-top" => a.on_top = true,
             "--config-dir" => a.config_dir = it.next().map(|v| paths::expand_tilde(&v)),
             "--data-dir" => a.data_dir = it.next().map(|v| paths::expand_tilde(&v)),
             "--locale-dir" => a.locale_dirs.extend(it.next().map(|v| paths::split_dir_list(&v)).unwrap_or_default()),
@@ -62,7 +64,7 @@ fn parse_args() -> Args {
                 })
             }
             "-h" | "--help" => {
-                println!("flightdeck [--config-dir DIR --data-dir DIR] [--locale-dir DIR[:DIR…]] [--mcp] [--mcp-port N] [--mcp-host ADDR] [--mcp-stdio URL] [--no-focus] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
+                println!("flightdeck [--config-dir DIR --data-dir DIR] [--locale-dir DIR[:DIR…]] [--mcp] [--mcp-port N] [--mcp-host ADDR] [--mcp-stdio URL] [--no-focus] [--on-top] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
                 std::process::exit(0);
             }
             other => {
@@ -159,10 +161,20 @@ fn main() -> eframe::Result<()> {
     if let Some(icon) = cockpit::icon::window_icon() {
         viewport = viewport.with_icon(icon);
     }
-    // FLIGHTDECK_NO_FOCUS=1: create the window without activating it (no focus stealing).
-    if std::env::var("FLIGHTDECK_NO_FOCUS").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) || args.no_focus {
+    // FLIGHTDECK_NO_FOCUS=1 / --no-focus: open the window without taking keyboard focus.
+    // Windows/macOS: with_active(false). X11: the EWMH hint set in the creator below.
+    // Wayland cannot decline focus, so such runs go through Xwayland when it is available.
+    let no_focus = std::env::var("FLIGHTDECK_NO_FOCUS").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) || args.no_focus;
+    if no_focus {
         viewport = viewport.with_active(false);
     }
+    // FLIGHTDECK_ON_TOP=1 / --on-top: keep the window above others. Unfocused windows are not
+    // raised, and a covered window paints nothing, so screenshot runs want this.
+    let on_top = std::env::var("FLIGHTDECK_ON_TOP").map(|v| v != "0" && !v.is_empty()).unwrap_or(false) || args.on_top;
+    if on_top {
+        viewport = viewport.with_window_level(egui::WindowLevel::AlwaysOnTop);
+    }
+    let force_x11 = no_focus && cockpit::platform::no_focus_prefers_x11(std::env::var("WAYLAND_DISPLAY").ok().as_deref(), std::env::var("DISPLAY").ok().as_deref());
     // FLIGHTDECK_WINDOW_POS=x,y: initial window position (honoured on X11/Windows/macOS; Wayland ignores it).
     if let Ok(pos) = std::env::var("FLIGHTDECK_WINDOW_POS") {
         if let Some((x, y)) = pos.split_once(',').and_then(|(x, y)| Some((x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?))) {
@@ -173,11 +185,32 @@ fn main() -> eframe::Result<()> {
     if let Err(e) = std::fs::create_dir_all(&dirs.data) {
         log::warn!("cannot create data dir {}: {e}", dirs.data.display());
     }
-    let options = eframe::NativeOptions { viewport, persistence_path: Some(dirs.data.join("app.ron")), ..Default::default() };
+    let mut options = eframe::NativeOptions { viewport, persistence_path: Some(dirs.data.join("app.ron")), ..Default::default() };
+    // Remember frames the GPU skips because the window is covered: screenshots explain stalls with it.
+    let surface_status = options.wgpu_options.on_surface_status.clone();
+    options.wgpu_options.on_surface_status = std::sync::Arc::new(move |status| {
+        if matches!(status, eframe::egui_wgpu::wgpu::CurrentSurfaceTexture::Occluded) {
+            cockpit::platform::note_occluded_frame();
+        }
+        surface_status(status)
+    });
+    #[cfg(target_os = "linux")]
+    if force_x11 {
+        log::info!("no-focus start: using X11 (Xwayland), Wayland has no way to open a window unfocused");
+        options.event_loop_builder = Some(Box::new(|b| {
+            use winit::platform::x11::EventLoopBuilderExtX11;
+            b.with_x11();
+        }));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = force_x11;
     eframe::run_native(
         "Flightdeck",
         options,
         Box::new(move |cc| {
+            if no_focus {
+                cockpit::platform::suppress_initial_focus(cc);
+            }
             cockpit::platform::init(cc, cc);
             let mut app = app::App::new(&cc.egui_ctx, settings, args.scale);
             app.settings_path = Some(dirs.settings_file());
@@ -211,6 +244,7 @@ fn main() -> eframe::Result<()> {
             }
             app.startup_dock = args.dock;
             app.stats = args.stats;
+            app.on_top = on_top;
             if let Some(h) = &args.mcp_host {
                 app.mcp_host = h.clone();
             }

@@ -609,9 +609,14 @@ Design rules:
   pain is "I can't see what this does"; curation is done by ordering and collapsing, not by
   omission.
 - *Window placement for development.* `FLIGHTDECK_NO_FOCUS=1` creates the window without
-  activating it and `FLIGHTDECK_WINDOW_POS=x,y` positions it (X11/Windows/macOS; Wayland
-  compositors ignore client positioning, so `scripts/shot.sh` runs through Xwayland). Test runs
-  never steal the user's focus.
+  taking focus: `with_active(false)` on Windows/macOS, and on X11 (where winit ignores that)
+  `_NET_WM_USER_TIME=0` set before the window is mapped. Wayland cannot decline focus, so a
+  no-focus start uses Xwayland when it exists. `FLIGHTDECK_ON_TOP=1` keeps the unraised window
+  visible (a covered window paints nothing, so screenshots would stall) and
+  `FLIGHTDECK_WINDOW_POS=x,y` positions it. Test runs never steal the user's focus.
+- *Screenshots never wait silently.* The image is read back from the GPU on a later frame, so
+  while one is pending the app keeps requesting repaints (an idle unfocused window paints
+  none otherwise), and after a timeout the caller gets the reason (window covered, minimized).
 - *Native first, wasm later.* Native gets the smoothest input and no CORS games; the code
   stays wasm-compatible (no blocking I/O on the UI thread, `reqwest` with the wasm feature).
 

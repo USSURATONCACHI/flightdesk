@@ -16,4 +16,4 @@ TESTROOT=${FLIGHTDECK_TEST_ROOT:-${TMPDIR:-/tmp}/flightdeck-dev}
 export FLIGHTDECK_CONFIG_DIR=${FLIGHTDECK_CONFIG_DIR:-$TESTROOT/config}
 export FLIGHTDECK_DATA_DIR=${FLIGHTDECK_DATA_DIR:-$TESTROOT/data}
 mkdir -p "$FLIGHTDECK_CONFIG_DIR" "$FLIGHTDECK_DATA_DIR" && chmod 700 "$FLIGHTDECK_CONFIG_DIR" "$FLIGHTDECK_DATA_DIR"
-env -u WAYLAND_DISPLAY FLIGHTDECK_NO_FOCUS=1 FLIGHTDECK_WINDOW_POS="$X,$Y" timeout "${SHOT_TIMEOUT:-120}" "$BIN" --size "${W}x${H}" --screenshot "$OUT" --screenshot-after "${SHOT_AFTER:-150}" --exit-after-screenshot "$@" 2>&1 | grep -E "ERROR|WARN|panick|frames:" || true
+env -u WAYLAND_DISPLAY FLIGHTDECK_NO_FOCUS=1 FLIGHTDECK_ON_TOP=1 FLIGHTDECK_WINDOW_POS="$X,$Y" timeout "${SHOT_TIMEOUT:-120}" "$BIN" --size "${W}x${H}" --screenshot "$OUT" --screenshot-after "${SHOT_AFTER:-150}" --exit-after-screenshot "$@" 2>&1 | grep -E "ERROR|WARN|panick|frames:" || true

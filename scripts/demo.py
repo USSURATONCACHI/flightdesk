@@ -3,7 +3,9 @@
 with ui_screenshot, and assemble docs/demo.gif with ffmpeg (palette-optimised, GitHub-friendly).
 
 Usage: scripts/demo.py [mcp_url] [out.gif]   (default http://127.0.0.1:7797/mcp, docs/demo.gif)
-Launch the app first, e.g. with scripts/shot.sh-style env and
+Record against synthetic data only: an empty scratch engine seeded by scripts/seed_synthetic.py.
+Launch the app first, with scratch FLIGHTDECK_CONFIG_DIR/FLIGHTDECK_DATA_DIR and
+  FLIGHTDECK_NO_FOCUS=1 FLIGHTDECK_ON_TOP=1 \
   flightdeck --size 1280x800 --mcp --mcp-port 7797 --url http://127.0.0.1:8089/engine-rest
 The scenario: open the process, zoom into the diagram, search a business key, jump to the
 hit, inspect the task, open the instance, look at variables, switch to Russian, back."""
@@ -28,7 +30,9 @@ tmp = tempfile.mkdtemp()
 
 def shot(hold=1.0):
     """Capture one frame and hold it for `hold` seconds."""
-    _, img = call("ui_screenshot", max_width=1280)
+    text, img = call("ui_screenshot", max_width=1280)
+    if img is None:
+        sys.exit(f"ui_screenshot failed: {text}")
     data = base64.b64decode(img["data"])
     p = os.path.join(tmp, f"f{len(frames):04d}.png")
     open(p, "wb").write(data)

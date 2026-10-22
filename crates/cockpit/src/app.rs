@@ -93,6 +93,8 @@ pub struct App {
     pub language_packs: Vec<crate::i18n::Pack>,
     pub language_report: crate::i18n::Report,
     pub stats: bool,
+    /// Keep the window above others (`--on-top`); applied once the window is mapped.
+    pub on_top: bool,
     frame_times: Vec<f32>,
     pub mcp: Option<crate::mcp::McpServer>,
     /// Bind address for the MCP server (`--mcp-host`; default loopback).
@@ -158,6 +160,7 @@ impl App {
             language_packs: vec![],
             language_report: Default::default(),
             stats: false,
+            on_top: false,
             frame_times: Vec::new(),
             mcp: None,
             mcp_host: "127.0.0.1".into(),
@@ -764,7 +767,18 @@ impl App {
         let path = plan.path.clone();
         let exit = plan.exit;
         let ctx2 = ctx.clone();
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done2 = done.clone();
+        let ctx3 = ctx.clone();
+        crate::platform::screenshot_wait(ctx.clone(), done, std::time::Duration::from_secs(15), move |why| {
+            log::error!("{why}");
+            if exit {
+                ctx3.send_viewport_cmd(egui::ViewportCommand::Close);
+                ctx3.request_repaint();
+            }
+        });
         ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |img: Arc<egui::ColorImage>| {
+            done2.store(true, std::sync::atomic::Ordering::SeqCst);
             let [w, h] = img.size;
             let raw: Vec<u8> = img.as_raw().to_vec();
             match image::RgbaImage::from_raw(w as u32, h as u32, raw) {
@@ -864,6 +878,11 @@ impl App {
             crate::theme::install_fonts(ctx);
             self.apply_theme(ctx);
             self.audit_settings_permissions();
+        }
+        // Window managers ignore stacking requests for unmapped windows, and eframe maps the
+        // window only after the first frame, so the startup request is repeated here.
+        if self.on_top && self.frame == 3 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::AlwaysOnTop));
         }
         self.set_ctx(ctx);
         crate::platform::pump();

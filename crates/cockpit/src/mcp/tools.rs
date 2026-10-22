@@ -1166,7 +1166,12 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 let path = arg_str(&a, "path").map(std::path::PathBuf::from);
                 let max_w = arg_i(&a, "max_width").unwrap_or(1280).max(200) as u32;
                 let reply2 = reply.clone();
+                let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let done2 = done.clone();
+                let reply3 = reply.clone();
+                crate::platform::screenshot_wait(ctx.clone(), done, std::time::Duration::from_secs(10), move |why| reply3.err(why));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |img: std::sync::Arc<egui::ColorImage>| {
+                    done2.store(true, std::sync::atomic::Ordering::SeqCst);
                     let [w, h] = img.size;
                     let Some(mut im) = image::RgbaImage::from_raw(w as u32, h as u32, img.as_raw().to_vec()) else {
                         reply2.err("bad image buffer");

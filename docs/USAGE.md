@@ -85,7 +85,7 @@ Credentials are stored in the OS config directory only when "remember password" 
 
 Other flags: `--open def:<key> | instance:<id> | search:<query> | definitions | incidents`,
 `--dock N`, `--theme light|dark`, `--scale 1.25`, `--size 1600x1000`, `--screenshot out.png`,
-`--stats`, `--no-focus`, `--mcp`, `--mcp-port N`.
+`--stats`, `--no-focus`, `--on-top`, `--mcp`, `--mcp-port N`.
 
 Unlimited drags move the real cursor: through winit on X11, Windows and macOS, and through the
 `wp_pointer_warp_v1` protocol on Wayland (KWin 6.4+). Compositors without it keep ordinary drags.
@@ -160,9 +160,14 @@ and translate; untranslated messages fall back to English.
 Logs go to stdout (`flightdeck > flightdeck.log 2>&1` to keep them); panics are appended to
 `<config dir>/crash.log`. `RUST_LOG=debug` raises the level.
 
-Environment: `FLIGHTDECK_NO_FOCUS=1` opens the window without taking focus;
-`FLIGHTDECK_WINDOW_POS=x,y` sets the initial position (not on Wayland — `scripts/shot.sh`
-uses Xwayland to place test windows on the second monitor).
+Environment: `FLIGHTDECK_NO_FOCUS=1` (or `--no-focus`) opens the window without taking keyboard
+focus. On X11 it marks the window with the EWMH "do not focus" hint; Wayland has no such
+request, so on a Wayland session with Xwayland available the window opens through Xwayland.
+An unfocused window is not raised and may open under other windows, where nothing is painted
+and screenshots cannot complete; `FLIGHTDECK_ON_TOP=1` (or `--on-top`) keeps it above them.
+`FLIGHTDECK_WINDOW_POS=x,y` sets the initial position (X11/Windows/macOS; Wayland ignores it).
+`scripts/shot.sh` uses all three to put test windows on the second monitor without touching
+your focus.
 
 ## Keyboard
 

@@ -7,6 +7,8 @@
 
 #[cfg(target_os = "linux")]
 pub mod wayland;
+#[cfg(target_os = "linux")]
+pub mod x11;
 
 #[cfg(target_os = "linux")]
 use raw_window_handle::RawWindowHandle;
@@ -94,6 +96,79 @@ pub fn init(window: &dyn HasWindowHandle, display: &dyn HasDisplayHandle) {
     *state().lock().unwrap() = Some(st);
 }
 
+/// Keep a not-yet-mapped window from taking focus when it appears. Windows and macOS handle
+/// this through `ViewportBuilder::with_active(false)`; on X11 winit ignores that, so the window
+/// gets the EWMH "do not focus" hint here. Wayland has no such request: callers that need it
+/// run through Xwayland (see `no_focus_prefers_x11`). Call before the first frame.
+pub fn suppress_initial_focus(window: &dyn HasWindowHandle) {
+    #[cfg(target_os = "linux")]
+    {
+        let xid = match window.window_handle().map(|h| h.as_raw()) {
+            Ok(RawWindowHandle::Xlib(w)) => Some(w.window as u32),
+            Ok(RawWindowHandle::Xcb(w)) => Some(w.window.get()),
+            _ => None,
+        };
+        if let Some(xid) = xid {
+            match x11::suppress_initial_focus(xid) {
+                Ok(()) => log::info!("x11: window opens without focus (_NET_WM_USER_TIME=0)"),
+                Err(e) => log::warn!("x11: could not set the no-focus hint: {e}"),
+            }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = window;
+}
+
+/// Whether a no-focus start should use X11 (Xwayland) instead of Wayland: Wayland offers no way
+/// for a client to decline focus, so with both displays available X11 is the only reliable path.
+pub fn no_focus_prefers_x11(wayland_display: Option<&str>, x_display: Option<&str>) -> bool {
+    cfg!(target_os = "linux") && wayland_display.is_some_and(|s| !s.is_empty()) && x_display.is_some_and(|s| !s.is_empty())
+}
+
+fn last_occluded_skip() -> &'static Mutex<Option<std::time::Instant>> {
+    static S: OnceLock<Mutex<Option<std::time::Instant>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(None))
+}
+
+/// Record that the GPU refused a frame because the window is covered (wgpu `Occluded`).
+/// Such frames are skipped, and any screenshot waiting on them is never delivered.
+pub fn note_occluded_frame() {
+    *last_occluded_skip().lock().unwrap() = Some(std::time::Instant::now());
+}
+
+/// Why a screenshot requested at `since` has not arrived: used for errors and logs.
+pub fn screenshot_stall_reason(since: std::time::Instant) -> String {
+    let covered = last_occluded_skip().lock().unwrap().is_some_and(|t| t >= since);
+    if covered {
+        "the window is covered by another window, so the GPU skips every frame and there is nothing \
+         to capture; uncover it, or start Flightdeck with --on-top / FLIGHTDECK_ON_TOP=1"
+            .into()
+    } else {
+        "no frame was painted (is the window minimized or on a hidden workspace?)".into()
+    }
+}
+
+/// Drive a pending screenshot to completion. The image is read back from the GPU
+/// asynchronously and only arrives once a later frame polls the device, and an idle window
+/// that nobody interacts with (unfocused, no pointer over it) paints no later frame. So this
+/// keeps requesting repaints until `done` is set, and calls `on_stall` with an explanation if
+/// that has not happened within `timeout`.
+pub fn screenshot_wait(ctx: egui::Context, done: std::sync::Arc<std::sync::atomic::AtomicBool>, timeout: std::time::Duration, on_stall: impl FnOnce(String) + Send + 'static) {
+    let since = std::time::Instant::now();
+    std::thread::spawn(move || {
+        while since.elapsed() < timeout {
+            if done.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            ctx.request_repaint();
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        if !done.load(std::sync::atomic::Ordering::SeqCst) {
+            on_stall(format!("screenshot timed out after {} s: {}", timeout.as_secs(), screenshot_stall_reason(since)));
+        }
+    });
+}
+
 pub fn platform() -> Platform {
     state().lock().unwrap().as_ref().map(|s| s.platform).unwrap_or(Platform::Other)
 }
@@ -163,5 +238,43 @@ mod tests {
         assert!(!warp_supported());
         assert!(!warp_pointer(&egui::Context::default(), egui::Pos2::ZERO));
         pump();
+    }
+
+    #[test]
+    fn no_focus_uses_x11_only_when_both_displays_exist() {
+        let linux = cfg!(target_os = "linux");
+        assert_eq!(no_focus_prefers_x11(Some("wayland-0"), Some(":0")), linux);
+        assert!(!no_focus_prefers_x11(Some("wayland-0"), None), "no Xwayland: stay on Wayland");
+        assert!(!no_focus_prefers_x11(Some("wayland-0"), Some("")));
+        assert!(!no_focus_prefers_x11(None, Some(":0")), "plain X11 session needs no switch");
+        assert!(!no_focus_prefers_x11(Some(""), Some(":0")));
+    }
+
+    fn wait(done: bool, timeout_ms: u64) -> Option<String> {
+        use std::sync::{atomic::AtomicBool, mpsc, Arc};
+        let (tx, rx) = mpsc::channel();
+        let flag = Arc::new(AtomicBool::new(done));
+        screenshot_wait(egui::Context::default(), flag, std::time::Duration::from_millis(timeout_ms), move |why| {
+            let _ = tx.send(why);
+        });
+        rx.recv_timeout(std::time::Duration::from_millis(timeout_ms + 2000)).ok()
+    }
+
+    /// A pending screenshot must end one way or the other: never a silent, endless wait.
+    #[test]
+    fn screenshot_wait_reports_stalls_and_stays_quiet_when_done() {
+        assert_eq!(wait(true, 100), None, "a delivered screenshot reports nothing");
+        let why = wait(false, 100).expect("a stalled screenshot is reported");
+        // The reason itself depends on global state another test may touch concurrently.
+        assert!(why.starts_with("screenshot timed out after"), "{why}");
+    }
+
+    #[test]
+    fn stall_reason_names_a_covered_window() {
+        let since = std::time::Instant::now();
+        note_occluded_frame();
+        assert!(screenshot_stall_reason(since).contains("covered"));
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(!screenshot_stall_reason(std::time::Instant::now()).contains("covered"), "older skips do not count");
     }
 }
