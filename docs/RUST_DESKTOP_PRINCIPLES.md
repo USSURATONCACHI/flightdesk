@@ -170,6 +170,10 @@ else.
   accessor deadlocks silently in release builds. Read values first, then take the lock.
 - Reproduce, fix at the root cause, add the test, run build + clippy + full tests, then commit
   with a message that says what changed and why. Small, frequent commits.
+- Bump the semantic version (one place: the workspace `Cargo.toml`) in the same commit as any
+  change users can notice: patch for fixes, minor for new features or new tools/flags (before
+  1.0 also for incompatible changes), major for incompatible changes after 1.0. Docs-, test- and
+  CI-only commits leave it alone. Never `r`-suffixed or date versions; never left pinned.
 - Report outcomes faithfully: say what was verified and how (test, screenshot, live check),
   and say plainly what was not verified or was left out.
 - When the user corrects an approach, record the rule where future sessions will see it

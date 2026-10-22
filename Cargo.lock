@@ -288,7 +288,7 @@ dependencies = [
 
 [[package]]
 name = "bpmn"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "roxmltree",
  "serde",
@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "camunda"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "log",
  "reqwest",
@@ -470,7 +470,7 @@ dependencies = [
 
 [[package]]
 name = "cockpit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
