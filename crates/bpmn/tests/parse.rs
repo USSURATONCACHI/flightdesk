@@ -153,3 +153,39 @@ fn successors_ignore_associations_and_message_flows() {
     assert_eq!(m.predecessors(gw).len(), 1);
     assert!(m.elements[gw].outgoing.len() > 2, "raw outgoing still contains the association");
 }
+
+#[test]
+fn lanes_pools_and_text_annotations_are_found_by_their_text() {
+    let m = fixture();
+    let found = |q: &str| search::search(&m, q, &search::SearchOptions::default()).into_iter().map(|x| x.target).collect::<Vec<_>>();
+    let idx = |id: &str| Ref::Element(m.element_idx(id).unwrap());
+    assert!(found("warehouse").contains(&idx("Lane_Warehouse")));
+    assert!(found("Order fulfilment").contains(&idx("Participant_Shop")));
+    assert_eq!(found("above 1000 need"), vec![idx("TextAnnotation_1")]);
+}
+
+#[test]
+fn focus_bounds_of_a_swimlane_sit_at_its_label_not_its_middle() {
+    let m = fixture();
+    let task = m.element_by_id("Task_Validate").unwrap();
+    assert_eq!(task.focus_bounds(), task.bounds, "ordinary shapes focus on themselves");
+    let lane = m.element_by_id("Lane_Warehouse").unwrap();
+    let b = lane.bounds;
+    let f = lane.focus_bounds();
+    let header = lane.swimlane_header().unwrap();
+    assert_eq!(header, Rect::new(b.x, b.y, SWIMLANE_HEADER, b.h));
+    assert_eq!(f.x, b.x, "starts at the label header");
+    assert!(f.w < b.w, "covers only the beginning of a wide lane");
+    assert!(f.contains(header.center()), "the centred label is inside");
+    assert!(task.swimlane_header().is_none());
+    // A very tall horizontal lane: the focus is centred on the label, not on the top edge.
+    let mut tall = lane.clone();
+    tall.bounds = Rect::new(0.0, 0.0, 5000.0, 4000.0);
+    let f = tall.focus_bounds();
+    assert!(f.h < 4000.0 && f.contains(Pos { x: 15.0, y: 2000.0 }), "{f:?}");
+    // Vertical lanes put the header along the top.
+    tall.is_horizontal = false;
+    let f = tall.focus_bounds();
+    assert_eq!(f.y, 0.0);
+    assert!(f.contains(Pos { x: 2500.0, y: 15.0 }), "{f:?}");
+}

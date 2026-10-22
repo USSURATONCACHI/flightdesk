@@ -20,7 +20,8 @@ project `.mcp.json` registers it; approve it or run
 ## Reading a process
 - `list_definitions` → `get_definition` (activity statistics = tokens and incidents per element).
 - `list_elements` (structure, lanes, in/out), `get_element` (every attribute, Camunda extensions,
-  conditions, XML), `find_elements` (text search, same as Ctrl+F).
+  conditions, XML), `get_definition_xml` (the whole BPMN file; `save_to` writes it to disk),
+  `find_elements` (text search, same as Ctrl+F).
 - Instance search language for `search_instances` / `ui_navigate search:`:
   `def:key ver:3 bk:ABC* act:Task_x exec:Task_y var.amount>1000 var.name="x y" state:active|suspended|running|finished|completed|terminated|any inc:yes|failedJob|~"msg" started>-7d finished<2026-10-01 by:user super:uuid`.
 

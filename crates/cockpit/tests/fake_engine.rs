@@ -152,6 +152,15 @@ fn app_loads_definition_and_instance_from_the_engine_and_mcp_writes_reach_it() {
     let found = call(harness.state_mut(), "find_elements", json!({"definition": "order_process", "query": "reminder"})).unwrap();
     let ids: Vec<&str> = found["matches"].as_array().unwrap().iter().map(|m| m["element_id"].as_str().unwrap()).collect();
     assert_eq!(ids, vec!["Timer_Reminder", "Task_Notify"], "matches by id and by name, in reading order");
+    let xml = call(harness.state_mut(), "get_definition_xml", json!({"definition": "order_process"})).unwrap();
+    let text = xml["xml"].as_str().unwrap();
+    assert!(text.contains("<bpmn:definitions") && text.contains("Task_Validate"));
+    assert_eq!(xml["bytes"].as_u64().unwrap() as usize, text.len());
+    let out = std::env::temp_dir().join(format!("flightdeck-xml-{}.bpmn", std::process::id()));
+    let saved = call(harness.state_mut(), "get_definition_xml", json!({"definition": "order_process", "save_to": out.to_str().unwrap()})).unwrap();
+    assert!(saved.get("xml").is_none(), "save_to returns the path, not the text");
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), text);
+    std::fs::remove_file(&out).unwrap();
 
     // 4. instance place: tokens, historic path and timers come from the engine payloads
     call(harness.state_mut(), "ui_navigate", json!({"to": format!("instance:{PI}")})).unwrap();

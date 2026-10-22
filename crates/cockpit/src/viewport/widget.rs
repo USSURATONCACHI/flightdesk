@@ -191,20 +191,24 @@ impl DiagramView {
             self.fit_rect(b.expand(b.w.max(b.h) * 0.9 + 40.0));
         }
     }
+    /// Bring `r` into view if it is off screen or too small to read.
     pub fn reveal(&mut self, m: &Model, r: Ref, viewport: Rect) {
-        let b = match r {
-            Ref::Element(i) => m.elements[i].bounds,
-            Ref::Flow(i) => m.flows[i].bounds,
-        };
-        if !b.is_valid() {
-            return;
-        }
-        let world = Rect::from_min_size(Pos2::new(b.x, b.y), Vec2::new(b.w, b.h));
+        let Some(world) = ref_focus(m, r) else { return };
         if !self.camera.contains_world(viewport, world.expand(40.0)) || self.camera.target.zoom < 0.4 {
-            self.camera.target.center = world.center();
-            if self.camera.target.zoom < 0.6 {
-                self.camera.target.zoom = 0.9;
-            }
+            self.glide_to(world, viewport);
+        }
+    }
+    /// Centre the camera on `world`, zooming in to a readable scale but never so far that the
+    /// area no longer fits the viewport.
+    fn glide_to(&mut self, world: Rect, viewport: Rect) {
+        self.camera.target.center = world.center();
+        if self.camera.target.zoom < 0.6 {
+            self.camera.target.zoom = 0.9;
+        }
+        let room = viewport.size() * 0.9;
+        if room.x > 0.0 && room.y > 0.0 && world.width() > 0.0 && world.height() > 0.0 {
+            let fit = (room.x / world.width()).min(room.y / world.height());
+            self.camera.target.zoom = self.camera.target.zoom.min(fit);
         }
     }
     /// Make find target `index` current and glide the camera onto it (edge-arrow click, MCP).
@@ -212,11 +216,8 @@ impl DiagramView {
         let targets = self.find.targets(m);
         let r = *targets.get(index)?;
         self.find.cursor = index;
-        let c = ref_center(m, r)?;
-        self.camera.target.center = c;
-        if self.camera.target.zoom < 0.6 {
-            self.camera.target.zoom = 0.9;
-        }
+        let world = ref_focus(m, r)?;
+        self.glide_to(world, self.last_viewport);
         Some(r)
     }
     /// Find targets that lie outside the last drawn viewport (index into `find.targets`).
@@ -228,13 +229,7 @@ impl DiagramView {
             .targets(m)
             .iter()
             .enumerate()
-            .filter(|(_, &r)| {
-                let b = match r {
-                    Ref::Element(j) => m.elements[j].bounds,
-                    Ref::Flow(j) => m.flows[j].bounds,
-                };
-                b.is_valid() && !visible.intersects(Rect::from_min_size(Pos2::new(b.x, b.y), Vec2::new(b.w, b.h)))
-            })
+            .filter(|(_, &r)| ref_focus(m, r).is_some_and(|f| !visible.intersects(f)))
             .map(|(i, _)| i)
             .collect()
     }
@@ -955,13 +950,19 @@ fn find_bar(ui: &mut Ui, view: &mut DiagramView, model: &Model, style: &DiagramS
     }
 }
 
-/// World-space centre of an element or flow, if its geometry is known.
-fn ref_center(model: &Model, r: Ref) -> Option<Pos2> {
+/// The world-space area of an element or flow worth looking at (see `Element::focus_bounds`:
+/// for a pool or lane that is its label, not the empty middle of the band), if its geometry is
+/// known. Camera jumps, minimap dots, edge arrows and on-screen checks all use it.
+fn ref_focus(model: &Model, r: Ref) -> Option<Rect> {
     let b = match r {
-        Ref::Element(i) => model.elements[i].bounds,
+        Ref::Element(i) => model.elements[i].focus_bounds(),
         Ref::Flow(i) => model.flows[i].bounds,
     };
-    b.is_valid().then(|| Pos2::new(b.x + b.w / 2.0, b.y + b.h / 2.0))
+    b.is_valid().then(|| Rect::from_min_size(Pos2::new(b.x, b.y), Vec2::new(b.w, b.h)))
+}
+
+fn ref_center(model: &Model, r: Ref) -> Option<Pos2> {
+    ref_focus(model, r).map(|f| f.center())
 }
 
 /// The colour a find hit is drawn in, consistent with the rings, legend and tooltips.
@@ -1618,5 +1619,40 @@ mod multiplier_format_tests {
         assert_eq!(f(1.25), "1.25");
         assert_eq!(f(0.333), "0.33");
         assert_eq!(f(10.0), "10");
+    }
+}
+
+#[cfg(test)]
+mod swimlane_find_tests {
+    use super::*;
+
+    fn model() -> Model {
+        bpmn::parse(&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn")).unwrap()).unwrap()
+    }
+
+    /// A lane matched by find is "on screen" only when its label is, and jumping to it brings
+    /// the label into view instead of the empty middle of the band.
+    #[test]
+    fn find_on_a_lane_targets_its_label() {
+        let model = model();
+        let lane_idx = model.element_idx("Lane_Warehouse").unwrap();
+        let lane = &model.elements[lane_idx];
+        let header = lane.swimlane_header().unwrap();
+        let mut view = DiagramView::new(Id::unique("swimlane-find"));
+        view.last_viewport = Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 400.0));
+        view.find.open = true;
+        view.find.query = "Warehouse".into();
+        view.find.matches = bpmn::search::search(&model, "Warehouse", &bpmn::search::SearchOptions::default());
+        let i = view.find.targets(&model).iter().position(|&r| r == Ref::Element(lane_idx)).expect("the lane matches");
+        // Camera on the right end of the lane: the band is under it, its label is not.
+        view.camera.target.center = Pos2::new(lane.bounds.x + lane.bounds.w - 100.0, lane.bounds.center().y);
+        view.camera.target.zoom = 1.0;
+        view.camera.snap();
+        assert!(view.offscreen_matches(&model, true).contains(&i), "label off screen counts as off screen");
+        view.go_to_match(&model, i);
+        let visible = view.camera.visible_world_rect_target(view.last_viewport);
+        let label = Pos2::new(header.center().x, header.center().y);
+        assert!(visible.contains(label), "label at {label:?} must be in {visible:?}");
+        assert!(!view.offscreen_matches(&model, true).contains(&i));
     }
 }

@@ -40,7 +40,7 @@ Community Edition REST API.
 
 Flightdeck has a built-in [MCP](https://modelcontextprotocol.io) server. Toggle it with the
 `MCP` pill in the top bar, in *Settings → MCP server*, or start with `flightdeck --mcp`
-(default port 7788, optional bearer token). It exposes 55 tools: engine tools
+(default port 7788, optional bearer token). It exposes 56 tools: engine tools
 (`list_definitions`, `get_element`, `find_elements`, `search_instances`, `get_instance`,
 `get_variables`, `set_variable`, `retry_job`, `modify_instance`, `batch`, …) and UI tools
 (`ui_state`, `ui_navigate`, `ui_select`, `ui_fit`, `ui_find`, `ui_dock`, `ui_filter`,

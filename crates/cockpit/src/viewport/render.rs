@@ -241,7 +241,7 @@ impl<'a> Renderer<'a> {
         }
         for &i in m.draw_order.iter() {
             let e = &m.elements[i];
-            if self.visible_world(&e.bounds) && (e.kind.is_flow_node() || e.kind.is_artifact()) {
+            if self.visible_world(&e.bounds) && (e.kind.is_flow_node() || e.kind.is_artifact() || e.kind.is_swimlane()) {
                 self.paint_highlights(i, e);
             }
         }
@@ -277,7 +277,7 @@ impl<'a> Renderer<'a> {
         let a = self.alpha_for(Ref::Element(idx));
         let st = self.style;
         self.painter.rect(r, 0.0, st.lane_fill.gamma_multiply(a), Stroke::new(self.px(1.5).clamp(1.0, 3.0), st.lane_stroke.gamma_multiply(a)), StrokeKind::Inside);
-        let header = self.px(30.0);
+        let header = self.px(bpmn::model::SWIMLANE_HEADER);
         if e.is_horizontal {
             self.painter.line_segment([Pos2::new(r.min.x + header, r.min.y), Pos2::new(r.min.x + header, r.max.y)], Stroke::new(self.px(1.0).clamp(0.5, 2.0), st.lane_stroke.gamma_multiply(a)));
             if lod <= Lod::Low {
@@ -296,7 +296,7 @@ impl<'a> Renderer<'a> {
         let a = self.alpha_for(Ref::Element(idx));
         let st = self.style;
         self.painter.rect_stroke(r, 0.0, Stroke::new(self.px(1.0).clamp(0.5, 2.0), st.lane_stroke.gamma_multiply(a)), StrokeKind::Inside);
-        let header = self.px(30.0);
+        let header = self.px(bpmn::model::SWIMLANE_HEADER);
         if e.is_horizontal {
             self.painter.line_segment([Pos2::new(r.min.x + header, r.min.y), Pos2::new(r.min.x + header, r.max.y)], Stroke::new(self.px(1.0).clamp(0.5, 2.0), st.lane_stroke.gamma_multiply(a)));
             if lod <= Lod::Low {
@@ -637,7 +637,9 @@ impl<'a> Renderer<'a> {
         if let Some((color, w)) = ring {
             let pad = w + 2.0;
             let rr = r.expand(pad);
-            if e.kind.is_event() {
+            if e.kind.is_swimlane() {
+                self.swimlane_ring(e, r, w, color);
+            } else if e.kind.is_event() {
                 self.painter.circle_stroke(r.center(), r.width() / 2.0 + pad, Stroke::new(w, color));
             } else if e.kind.is_gateway() {
                 self.diamond(rr, Color32::TRANSPARENT, Stroke::new(w, color));
@@ -703,7 +705,9 @@ impl<'a> Renderer<'a> {
     /// Solid highlight ring following the element's silhouette.
     fn solid_ring(&self, e: &Element, r: Rect, w: f32, color: Color32) {
         let pad = w + 2.0;
-        if e.kind.is_event() {
+        if e.kind.is_swimlane() {
+            self.swimlane_ring(e, r, w, color);
+        } else if e.kind.is_event() {
             self.painter.circle_stroke(r.center(), r.width() / 2.0 + pad, Stroke::new(w, color));
         } else if e.kind.is_gateway() {
             self.diamond(r.expand(pad), Color32::TRANSPARENT, Stroke::new(w, color));
@@ -727,7 +731,8 @@ impl<'a> Renderer<'a> {
             let pts = vec![Pos2::new(c.x, rr.min.y), Pos2::new(rr.max.x, c.y), Pos2::new(c.x, rr.max.y), Pos2::new(rr.min.x, c.y), Pos2::new(c.x, rr.min.y)];
             self.painter.add(Shape::dashed_line(&pts, Stroke::new(w, b), 7.0, 7.0));
         } else {
-            let rr = r.expand(pad);
+            // Pools and lanes tile the diagram, so their ring stays inside the band.
+            let rr = if e.kind.is_swimlane() { r.shrink(w / 2.0) } else { r.expand(pad) };
             // Diagonal hatch clipped to the four border strips of the ring.
             let outer = rr.expand(w / 2.0);
             let inner = rr.shrink(w / 2.0);
@@ -748,6 +753,15 @@ impl<'a> Renderer<'a> {
                 }
             }
         }
+    }
+
+    /// Ring of a pool or lane: a square outline just inside the band (neighbouring bands share
+    /// edges) and a tint over the label header, which is often the only part on screen.
+    fn swimlane_ring(&self, e: &Element, r: Rect, w: f32, color: Color32) {
+        if let Some(h) = e.swimlane_header() {
+            self.painter.rect_filled(self.wr(h), 0.0, color.gamma_multiply(0.18));
+        }
+        self.painter.rect_stroke(r, 0.0, Stroke::new(w, color), StrokeKind::Inside);
     }
 
     // ---------- primitives ----------

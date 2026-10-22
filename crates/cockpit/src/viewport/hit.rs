@@ -56,11 +56,8 @@ pub fn hit_test(m: &Model, p: Pos2, tolerance: f32) -> Option<Ref> {
         let container = (e.kind.is_container() && e.is_expanded) || matches!(e.kind, ElementKind::Lane | ElementKind::Participant | ElementKind::Group);
         if container && e.bounds.contains(wp) {
             // Only count the header strip for lanes/pools so empty space pans.
-            if matches!(e.kind, ElementKind::Lane | ElementKind::Participant) {
-                let in_header = if e.is_horizontal { wp.x <= e.bounds.x + 30.0 } else { wp.y <= e.bounds.y + 30.0 };
-                if !in_header {
-                    continue;
-                }
+            if e.swimlane_header().is_some_and(|h| !h.contains(wp)) {
+                continue;
             }
             if e.kind.is_container() {
                 // header strip of subprocess (top 24 units) only

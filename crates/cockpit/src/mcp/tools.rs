@@ -28,6 +28,7 @@ fn specs_vec() -> Vec<Spec> {
         s("get_definition", "Definition metadata, versions and per-activity statistics (running tokens, incidents).", obj(json!({"definition": def}), &["definition"])),
         s("list_elements", "Elements of a definition's BPMN diagram (id, name, type, lane, implementation summary, in/out). Use to understand process structure.", obj(json!({"definition": def, "type": {"type": "string", "description": "category filter: task | gateway | event | call | subprocess | lane | pool | flow"}, "filter": {"type": "string", "description": "substring over id/name"}, "limit": {"type": "integer"}}), &["definition"])),
         s("get_element", "Everything about one BPMN element: attributes, Camunda extensions (I/O, listeners, properties, fields, forms), event definitions, multi-instance, incoming/outgoing flows with conditions, and raw XML.", obj(json!({"definition": def, "element_id": {"type": "string"}}), &["definition", "element_id"])),
+        s("get_definition_xml", "The definition's full BPMN XML as deployed. Large diagrams run to megabytes: pass `save_to` (a file path) to have it written there instead of returned.", obj(json!({"definition": def, "save_to": {"type": "string", "description": "write the XML to this file and return its path and size"}}), &["definition"])),
         s("find_elements", "Search elements of a diagram by name, id, type, expression, implementation or documentation (same engine as Ctrl+F).", obj(json!({"definition": def, "query": {"type": "string"}, "include_flows": {"type": "boolean"}, "category": {"type": "string"}}), &["definition", "query"])),
         s("search_instances", "Search process instances with the query language: `def:key ver:3 id:uuid bk:ABC* act:Task_x exec:Task_y var.amount>1000 var.name=\"x y\" state:active|suspended|running|finished|completed|terminated|any inc:yes|failedJob|~msg started>2026-10-01 finished<-1d by:user super:uuid tenant:t`. Routes to the runtime or history API automatically.", obj(json!({"query": {"type": "string"}, "page": {"type": "integer"}, "page_size": {"type": "integer", "default": 50}, "mode": {"type": "string", "enum": ["auto", "runtime", "history"]}}), &["query"])),
         s("get_instance", "Process instance overview: state, times, definition, tokens (active activities), open incidents, user tasks, jobs, external tasks, called instances, variable names.", obj(json!({"id": inst}), &["id"])),
@@ -305,16 +306,16 @@ fn find_json(view: &crate::viewport::DiagramView, m: &bpmn::Model) -> Value {
         .iter()
         .enumerate()
         .map(|(i, &r)| {
-            let (id, name) = match r {
-                bpmn::Ref::Element(j) => (m.elements[j].id.clone(), m.elements[j].display_name().to_string()),
-                bpmn::Ref::Flow(j) => (m.flows[j].id.clone(), m.flows[j].name.clone().unwrap_or_default()),
+            let (id, name, ty) = match r {
+                bpmn::Ref::Element(j) => (m.elements[j].id.clone(), m.elements[j].display_name().to_string(), m.elements[j].kind.label()),
+                bpmn::Ref::Flow(j) => (m.flows[j].id.clone(), m.flows[j].name.clone().unwrap_or_default(), m.flows[j].kind.label().to_string()),
             };
             let kind = match (el.contains(&r), inst.contains(&r)) {
                 (true, true) => "both",
                 (false, true) => "instance",
                 _ => "element",
             };
-            json!({"index": i, "id": id, "name": name, "kind": kind, "visible": !offscreen.contains(&i), "current": i == view.find.cursor})
+            json!({"index": i, "id": id, "name": name, "type": ty, "kind": kind, "visible": !offscreen.contains(&i), "current": i == view.find.cursor})
         })
         .collect();
     json!({
@@ -390,7 +391,7 @@ fn retry_later(app: &mut App, tool: String, mut args: Value, reply: Reply, why: 
 pub fn dispatch(app: &mut App, call: McpCall) {
     let McpCall { tool, args: a, reply } = call;
     // Make sure the definition list exists for key → id resolution.
-    if matches!(tool.as_str(), "list_elements" | "get_element" | "find_elements") {
+    if matches!(tool.as_str(), "list_elements" | "get_element" | "get_definition_xml" | "find_elements") {
         if let Some(d) = arg_str(&a, "definition") {
             if !d.contains(':') && app.cache.defs.data.is_none() {
                 app.ensure_definitions();
@@ -440,7 +441,7 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 });
                 Ok(None)
             }
-            "list_elements" | "get_element" | "find_elements" => {
+            "list_elements" | "get_element" | "get_definition_xml" | "find_elements" => {
                 let d = need(&a, "definition")?;
                 let def_id = resolve_definition(app, d).ok_or("unknown definition key; call list_definitions first or pass the full id")?;
                 let Some(m) = app.diagram(&def_id) else {
@@ -487,6 +488,14 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                         }
                         json!({"definition_id": def_id, "count": out.len(), "elements": out})
                     }
+                    "get_definition_xml" => match arg_str(&a, "save_to") {
+                        Some(path) => {
+                            let path = crate::paths::expand_tilde(path);
+                            std::fs::write(&path, m.source.as_bytes()).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+                            json!({"definition_id": def_id, "saved_to": path, "bytes": m.source.len()})
+                        }
+                        None => json!({"definition_id": def_id, "bytes": m.source.len(), "xml": &*m.source}),
+                    },
                     "get_element" => {
                         let id = need(&a, "element_id")?;
                         match m.lookup(id) {

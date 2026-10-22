@@ -194,6 +194,10 @@ impl ElementKind {
     pub fn is_activity(&self) -> bool {
         self.is_task() || self.is_container() || matches!(self, ElementKind::CallActivity)
     }
+    /// Pools and lanes: bands with a label header along their leading edge.
+    pub fn is_swimlane(&self) -> bool {
+        matches!(self, ElementKind::Participant | ElementKind::Lane)
+    }
     pub fn is_container(&self) -> bool {
         use ElementKind::*;
         matches!(self, SubProcess | AdHocSubProcess | Transaction)
@@ -400,7 +404,33 @@ pub struct Element {
     pub xml_range: Range<usize>,
 }
 
+/// Thickness of the label header of a pool or lane, in world units.
+pub const SWIMLANE_HEADER: f32 = 30.0;
+/// How much of a pool or lane `Element::focus_bounds` covers along each axis, in world units.
+const SWIMLANE_FOCUS_SPAN: f32 = 600.0;
+
 impl Element {
+    /// The label header strip of a pool or lane (where its name is drawn, centred).
+    pub fn swimlane_header(&self) -> Option<Rect> {
+        let b = self.bounds;
+        self.kind.is_swimlane().then(|| if self.is_horizontal { Rect::new(b.x, b.y, SWIMLANE_HEADER.min(b.w), b.h) } else { Rect::new(b.x, b.y, b.w, SWIMLANE_HEADER.min(b.h)) })
+    }
+    /// The part of the element worth bringing into view. That is the whole shape, except for
+    /// pools and lanes: they can span the entire diagram, so their centre is usually empty
+    /// space far from the label. For them it is the start of the band around the label.
+    pub fn focus_bounds(&self) -> Rect {
+        let b = self.bounds;
+        if !self.kind.is_swimlane() || !b.is_valid() {
+            return b;
+        }
+        let w = b.w.min(SWIMLANE_FOCUS_SPAN);
+        let h = b.h.min(SWIMLANE_FOCUS_SPAN);
+        if self.is_horizontal {
+            Rect::new(b.x, b.y + (b.h - h) / 2.0, w, h)
+        } else {
+            Rect::new(b.x + (b.w - w) / 2.0, b.y, w, h)
+        }
+    }
     pub fn attr(&self, name: &str) -> Option<&str> {
         self.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
     }
