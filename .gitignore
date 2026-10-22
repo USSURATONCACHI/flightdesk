@@ -1,4 +1,5 @@
-target/
+# build output; no trailing slash so a symlinked target dir is ignored too
+/target
 *.png.new
 
 # makepkg build artefacts (packaging/arch)
@@ -7,3 +8,8 @@ packaging/arch/pkg/
 packaging/arch/*.pkg.tar*
 packaging/arch/*.log
 dist/
+
+# Python bytecode and local app logs
+__pycache__/
+*.pyc
+/*.log
