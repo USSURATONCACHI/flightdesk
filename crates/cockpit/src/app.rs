@@ -222,7 +222,7 @@ impl App {
     }
 
     pub fn auto_refresh_allowed(&self) -> bool {
-        !self.paused && (self.window_focused || !self.settings.pause_when_unfocused)
+        !self.paused && (self.window_focused || !self.settings.pause_refresh_unfocused)
     }
 
     // ---------- connection ----------
@@ -743,7 +743,7 @@ impl App {
                     }
                     if self.paused {
                         ui.label(RichText::new(t!("status-paused")).color(tokens.suspended).small());
-                    } else if self.settings.pause_when_unfocused && !self.window_focused {
+                    } else if self.settings.pause_refresh_unfocused && !self.window_focused {
                         ui.label(RichText::new(t!("status-paused-unfocused")).weak().small());
                     }
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {

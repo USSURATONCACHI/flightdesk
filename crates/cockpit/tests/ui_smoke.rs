@@ -262,4 +262,6 @@ fn synthetic_keys_work_in_an_unfocused_window() {
     harness.run_steps(2);
     let sel = call(harness.state_mut(), "ui_state", json!({})).unwrap()["place"]["diagram"]["selection"].clone();
     assert!(!sel.is_null(), "Tab must select an element in an unfocused window");
+    assert!(!harness.state().window_focused, "the app saw the unfocused window");
+    assert!(harness.state().auto_refresh_allowed(), "live data keeps refreshing while unfocused by default");
 }

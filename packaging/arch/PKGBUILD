@@ -5,7 +5,7 @@
 # The version comes from the workspace Cargo.toml: bump it there (semver) for each release.
 
 pkgname=flightdeck
-pkgver=0.3.0
+pkgver=0.3.1
 pkgrel=1
 pkgdesc="Fast, keyboard-first cockpit for Camunda 7 process engines, with a built-in MCP server"
 arch=('x86_64' 'aarch64')

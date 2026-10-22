@@ -431,8 +431,9 @@ palette by name.
   `skipCustomListeners` / `skipIoMappings` toggles). Finished instances expose **Restart**
   (`/process-definition/{id}/restart`) with the same picker.
 
-Auto-refresh: 5 s for instance places while the window is focused, 10 s for lists, paused
-when the window loses focus or the user presses `‖`; the toolbar shows "updated 3 s ago".
+Auto-refresh: 5 s for instance places, 10 s for lists, also while the window is unfocused (a
+cockpit often sits on a second monitor; pausing then is an opt-in setting). `‖` pauses it;
+the toolbar shows "updated 3 s ago".
 Any write command triggers an immediate refresh of the affected place.
 
 ---

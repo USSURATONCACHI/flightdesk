@@ -68,7 +68,9 @@ pub struct Settings {
     pub alt_speed: f32,
     pub refresh_instance_secs: u64,
     pub refresh_list_secs: u64,
-    pub pause_when_unfocused: bool,
+    /// Off by default: live data keeps updating on a second monitor. (Renamed from
+    /// `pause_when_unfocused`, which defaulted to on, so old files pick up the new default.)
+    pub pause_refresh_unfocused: bool,
     pub confirm_destructive: bool,
     pub dock_width: f32,
     pub saved_searches: Vec<SavedSearch>,
@@ -101,7 +103,7 @@ impl Default for Settings {
             alt_speed: 2.0,
             refresh_instance_secs: 5,
             refresh_list_secs: 10,
-            pause_when_unfocused: true,
+            pause_refresh_unfocused: false,
             confirm_destructive: true,
             dock_width: 420.0,
             saved_searches: vec![],
@@ -359,5 +361,22 @@ mod zoom_speed_tests {
         let (lo, hi) = ZOOM_SPEED_RANGE;
         assert_eq!(wild.zoom_mouse(), hi * hi, "a hand-edited file cannot make zoom unusable");
         assert_eq!(wild.zoom_keyboard(), lo * lo);
+    }
+}
+
+#[cfg(test)]
+mod refresh_tests {
+    use super::*;
+
+    /// Files written before the rename carry `pause_when_unfocused = true` (the old default);
+    /// they must come out refreshing in the background, and the stale key must not linger.
+    #[test]
+    fn old_pause_key_is_dropped_and_refresh_continues_unfocused() {
+        let (s, _) = Settings::from_toml_lenient("pause_when_unfocused = true\nrefresh_list_secs = 10\n").unwrap();
+        assert!(!s.pause_refresh_unfocused);
+        let saved = toml::to_string(&s).unwrap();
+        assert!(!saved.contains("pause_when_unfocused"), "{saved}");
+        let (s, _) = Settings::from_toml_lenient("pause_refresh_unfocused = true\n").unwrap();
+        assert!(s.pause_refresh_unfocused, "an explicit choice under the new key is kept");
     }
 }

@@ -221,7 +221,7 @@ impl SettingsPlace {
                         }
                         ui.end_row();
                     });
-                    dirty |= ui.checkbox(&mut app.settings.pause_when_unfocused, t!("settings-pause-unfocused")).changed();
+                    dirty |= ui.checkbox(&mut app.settings.pause_refresh_unfocused, t!("settings-pause-unfocused")).changed();
                     dirty |= ui.checkbox(&mut app.settings.confirm_destructive, t!("settings-confirm-destructive")).changed();
                 });
                 section(ui, "s-mcp", &t!("settings-mcp"), true, |ui| {
