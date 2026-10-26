@@ -15,6 +15,8 @@ pub enum InspectorAction {
     IncidentsAt(String),
     /// Fit the whole diagram into view.
     FitDiagram,
+    /// Compare this document with another one (opens the diff).
+    Compare,
     /// Open the document's XML view at this element (or the start).
     ViewXml(Option<String>),
     /// Open the document in an external program or copy `path:line:col` of the element.

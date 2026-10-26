@@ -906,6 +906,7 @@ impl DiffPlace {
                     self.views[v].fit_refs(d.model(v), std::iter::once(r));
                 }
                 InspectorAction::FitDiagram => self.views[v].fit_all(),
+                InspectorAction::Compare => app.request_compare(),
                 InspectorAction::OpenDefinitionKey(_) | InspectorAction::InstancesAt(_) | InspectorAction::ExecutedAt(_) | InspectorAction::IncidentsAt(_) => {
                     app.toasts.push(crate::widgets::ToastKind::Info, crate::t!("file-needs-engine"));
                 }

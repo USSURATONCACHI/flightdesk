@@ -221,3 +221,38 @@ fn documentation_is_rendered_after_every_other_inspector_field() {
         assert!(r.max.y <= doc.min.y, "{other} at {r:?} must come before the documentation at {doc:?}");
     }
 }
+
+fn right_click(h: &mut Harness<'static, App>, p: egui::Pos2) {
+    h.input_mut().events.push(egui::Event::PointerMoved(p));
+    h.run_steps(1);
+    for pressed in [true, false] {
+        h.input_mut().events.push(egui::Event::PointerButton { pos: p, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() });
+    }
+    h.run_steps(3);
+}
+
+#[test]
+fn compare_from_the_canvas_background_and_from_the_tab_header() {
+    let file = fixture("order.bpmn");
+    let mut h = harness(Nav::File { path: file.clone() });
+    // Background of the diagram.
+    let rect = h.state().last_diagram_viewport;
+    right_click(&mut h, rect.min + egui::vec2(8.0, 8.0));
+    h.get_by_label_contains("Compare with").click();
+    h.run_steps(4);
+    let p = place(h.state_mut());
+    assert_eq!(p["kind"], "diff");
+    assert_eq!(p["right"], file.display().to_string(), "the document becomes the 'after' side");
+    assert!(p["left"].is_null(), "the other side is picked next");
+
+    // Tab header of the file tab.
+    call(h.state_mut(), "ui_tabs", json!({"action": "close"})).unwrap();
+    h.run_steps(2);
+    let tab = h.get_by_label("order.bpmn").rect();
+    right_click(&mut h, tab.center());
+    h.get_by_label_contains("Compare with").click();
+    h.run_steps(4);
+    let p = place(h.state_mut());
+    assert_eq!(p["kind"], "diff");
+    assert_eq!(p["right"], file.display().to_string());
+}

@@ -951,6 +951,7 @@ settings-xml-editor-hint = Команда для «Открыть XML в ред�
 ctx-view-xml = Показать XML
 ctx-open-xml-with = Открыть XML с помощью…
 ctx-open-xml-editor = Открыть XML в редакторе
+ctx-compare-with = Сравнить с…
 ctx-copy-location = Копировать путь:строка:столбец
 ctx-copy-location-tip = Файл и позиция элемента в виде, который понимают редакторы, например VS Code (code -g путь:строка:столбец). Определения с движка сначала сохраняются в каталог данных.
 xml-find = Найти

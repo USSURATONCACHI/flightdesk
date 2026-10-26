@@ -932,6 +932,7 @@ settings-xml-editor-hint = Befehl für „XML im Editor öffnen“, z. B. code -
 ctx-view-xml = XML anzeigen
 ctx-open-xml-with = XML öffnen mit…
 ctx-open-xml-editor = XML im Editor öffnen
+ctx-compare-with = Vergleichen mit…
 ctx-copy-location = Pfad:Zeile:Spalte kopieren
 ctx-copy-location-tip = Datei und Position dieses Elements in der Form, die Editoren wie VS Code verstehen (code -g pfad:zeile:spalte). Engine-Definitionen werden zuerst ins Datenverzeichnis gespeichert.
 xml-find = Suchen

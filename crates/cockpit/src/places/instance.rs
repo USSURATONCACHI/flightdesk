@@ -585,6 +585,7 @@ impl InstancePlace {
                     self.view.fit_refs(&model, std::iter::once(r));
                 }
                 InspectorAction::FitDiagram => self.view.fit_all(),
+                InspectorAction::Compare => app.request_compare(),
                 InspectorAction::ViewXml(_) | InspectorAction::XmlExternal(..) => {
                     if let Some(d) = &def_id {
                         let source = crate::places::source::DocSource::Definition(d.clone());

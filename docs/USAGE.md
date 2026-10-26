@@ -43,6 +43,7 @@ Community Edition REST API.
   engine are saved to the data directory first so editors get a real file.
 - **Diffs** – `Ctrl+Shift+M` (or *Compare BPMN…* in the palette) compares two documents: local
   files, any deployed version, or a mix; from a definition it starts with the previous version.
+  Also on the right-click menu of the diagram background and of a tab header (*Compare with…*).
   Added, removed (dashed ghosts), changed (`~N` properties) and moved elements *and flows* are
   marked on the diagram; Before / After / Side by side; `N` / `Shift+N` step through changes; the
   Changes dock lists every property change git-style. *XML diff* opens a folded, git-style

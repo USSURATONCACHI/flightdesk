@@ -933,6 +933,7 @@ settings-xml-editor-hint = Command for “Open XML in editor”, e.g. code -g {"
 ctx-view-xml = View XML
 ctx-open-xml-with = Open XML with…
 ctx-open-xml-editor = Open XML in editor
+ctx-compare-with = Compare with…
 ctx-copy-location = Copy path:line:col
 ctx-copy-location-tip = The file and position of this element, as editors such as VS Code accept it (code -g path:line:col). Engine definitions are saved to the data directory first.
 xml-find = Find

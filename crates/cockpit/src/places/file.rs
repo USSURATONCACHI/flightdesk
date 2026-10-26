@@ -119,6 +119,7 @@ impl FilePlace {
                     self.view.fit_refs(&model, std::iter::once(r));
                 }
                 InspectorAction::FitDiagram => self.view.fit_all(),
+                InspectorAction::Compare => app.request_compare(),
                 InspectorAction::ViewXml(_) | InspectorAction::XmlExternal(..) => {
                     crate::places::xml::handle_action(app, crate::places::xml::XmlDoc::Single(source.clone()), &[(source.clone(), model.clone())], &a);
                 }

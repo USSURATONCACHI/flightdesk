@@ -103,6 +103,9 @@ pub struct App {
     pub mcp_error: Option<String>,
     pub synthetic_events: Vec<egui::Event>,
     pub last_diagram_viewport: egui::Rect,
+    /// Set by a place (which runs while its tab is out of `tabs`): compare the active tab's
+    /// document once the tab is back.
+    compare_requested: bool,
     /// Where exported files live (definition XML for external editors). Handed in by the
     /// binary; `None` in tests, which then cannot export.
     pub data_dir: Option<PathBuf>,
@@ -176,6 +179,7 @@ impl App {
             synthetic_events: Vec::new(),
             last_diagram_viewport: egui::Rect::NOTHING,
             data_dir: None,
+            compare_requested: false,
             bg_tx,
             bg_rx,
         }
@@ -234,8 +238,18 @@ impl App {
     /// Start a comparison from the current document: a definition is compared with its
     /// previous version, anything else opens the picker with this document on the "after" side.
     pub fn open_compare(&mut self) {
+        self.open_compare_for(self.active);
+    }
+
+    /// `open_compare` for code running inside a place's frame.
+    pub fn request_compare(&mut self) {
+        self.compare_requested = true;
+    }
+
+    /// Compare the document of tab `i` (see `open_compare`).
+    pub fn open_compare_for(&mut self, i: usize) {
         use crate::places::source::DocSource;
-        let (left, right) = match self.tabs.get(self.active).map(|t| t.place()) {
+        let (left, right) = match self.tabs.get(i).map(|t| t.place()) {
             Some(Place::Definition(p)) => (self.previous_version(&p.def_id).map(DocSource::Definition), Some(DocSource::Definition(p.def_id.clone()))),
             Some(Place::Instance(p)) => (None, p.definition_id_pub().map(DocSource::Definition)),
             Some(Place::File(p)) => (None, Some(DocSource::File(p.path.clone()))),
@@ -743,6 +757,7 @@ impl App {
                 // tabs
                 let mut close: Option<usize> = None;
                 let mut activate: Option<usize> = None;
+                let mut compare: Option<usize> = None;
                 egui::ScrollArea::horizontal().id_salt("tabs-scroll").max_width(ui.available_width() - 260.0).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         for (i, t) in self.tabs.iter().enumerate() {
@@ -759,6 +774,19 @@ impl App {
                                     if label.middle_clicked() && self.tabs.len() > 1 {
                                         close = Some(i);
                                     }
+                                    let has_doc = t.place().has_diagram();
+                                    let can_close = self.tabs.len() > 1;
+                                    label.context_menu(|ui| {
+                                        let text = if has_doc { t!("ctx-compare-with") } else { t!("cmd-compare") };
+                                        if ui.button(format!("{text:<22} Ctrl+Shift+M")).clicked() {
+                                            compare = Some(i);
+                                            ui.close();
+                                        }
+                                        if ui.add_enabled(can_close, egui::Button::new(format!("{:<22} Ctrl+W", t!("common-close")))).clicked() {
+                                            close = Some(i);
+                                            ui.close();
+                                        }
+                                    });
                                     if self.tabs.len() > 1 && ui.add(egui::Button::new(RichText::new("×").size(11.0)).frame(false)).on_hover_text(t!("tab-close-tip")).clicked() {
                                         close = Some(i);
                                     }
@@ -776,6 +804,9 @@ impl App {
                 });
                 if let Some(i) = activate {
                     self.active = i;
+                }
+                if let Some(i) = compare {
+                    self.open_compare_for(i);
                 }
                 if let Some(i) = close {
                     self.close_tab(i);
@@ -1115,6 +1146,9 @@ impl App {
                 Place::Diff(p) => p.ui(root, self),
             }
             self.tabs.insert(active, tab);
+            if std::mem::take(&mut self.compare_requested) {
+                self.open_compare();
+            }
         } else {
             connect::ui(root, self);
         }
@@ -1244,6 +1278,10 @@ pub fn diagram_context_menu(ui: &mut egui::Ui, model: &Model, target: Option<bpm
             ui.label(RichText::new(t!("ctx-diagram")).weak());
             if ui.button(format!("{:<22} 0", t!("ctx-fit-diagram"))).clicked() {
                 actions.push(A::FitDiagram);
+                ui.close();
+            }
+            if ui.button(format!("{:<22} Ctrl+Shift+M", t!("ctx-compare-with"))).clicked() {
+                actions.push(A::Compare);
                 ui.close();
             }
             ui.separator();
