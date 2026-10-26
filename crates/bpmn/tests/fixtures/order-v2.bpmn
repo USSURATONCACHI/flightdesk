@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:camunda="http://camunda.org/schema/1.0/bpmn" id="Definitions_order" targetNamespace="http://flightdeck.test" exporter="hand" exporterVersion="1">
+  <bpmn:collaboration id="Collaboration_1">
+    <bpmn:participant id="Participant_Shop" name="Order fulfilment" processRef="order_process" />
+  </bpmn:collaboration>
+  <bpmn:process id="order_process" name="Order process" isExecutable="true" camunda:historyTimeToLive="60">
+    <bpmn:documentation>Synthetic order process used by Flightdeck tests. Version 2: adds a fraud check and drops the reminder branch.</bpmn:documentation>
+    <bpmn:laneSet id="LaneSet_1">
+      <bpmn:lane id="Lane_Sales" name="Sales">
+        <bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Fraud</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Amount</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Approve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Join</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_Warehouse" name="Warehouse">
+        <bpmn:flowNodeRef>Task_Reserve</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Ship</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Event_Wait</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Done</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Task_Fail</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_Failed</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Sub_Review</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="StartEvent_1" name="Order received" camunda:formKey="embedded:app:forms/order.html">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="amount" label="Amount" type="long" defaultValue="100" />
+          <camunda:formField id="customer" label="Customer" type="string" />
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Task_Validate" name="Validate order data" camunda:asyncBefore="true" camunda:delegateExpression="${validateOrderDelegate}">
+      <bpmn:documentation>Checks the order payload.</bpmn:documentation>
+      <bpmn:extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="orderJson">
+            <camunda:script scriptFormat="javascript">JSON.stringify(order)</camunda:script>
+          </camunda:inputParameter>
+          <camunda:inputParameter name="limits">
+            <camunda:map>
+              <camunda:entry key="max">10000</camunda:entry>
+              <camunda:entry key="min">1</camunda:entry>
+            </camunda:map>
+          </camunda:inputParameter>
+          <camunda:outputParameter name="validation">${result}</camunda:outputParameter>
+        </camunda:inputOutput>
+        <camunda:executionListener event="start" class="com.example.AuditListener" />
+        <camunda:properties>
+          <camunda:property name="owner" value="sales-team" />
+        </camunda:properties>
+        <camunda:failedJobRetryTimeCycle>R3/PT10S</camunda:failedJobRetryTimeCycle>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="Task_Fraud" name="Fraud check" camunda:type="external" camunda:topic="fraud">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_Fraud</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="Gateway_Amount" name="Amount?" default="Flow_Small">
+      <bpmn:incoming>Flow_Fraud</bpmn:incoming>
+      <bpmn:outgoing>Flow_Small</bpmn:outgoing>
+      <bpmn:outgoing>Flow_Large</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:userTask id="Task_Approve" name="Approve large order" camunda:assignee="${approver}" camunda:candidateGroups="management,finance" camunda:dueDate="${dateTime().plusDays(2).toDate()}" camunda:priority="50">
+      <bpmn:extensionElements>
+        <camunda:taskListener event="create" expression="${taskService.setVariable(task.id, 'seen', false)}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Large</bpmn:incoming>
+      <bpmn:outgoing>Flow_Approved</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:exclusiveGateway id="Gateway_Join">
+      <bpmn:incoming>Flow_Small</bpmn:incoming>
+      <bpmn:incoming>Flow_Approved</bpmn:incoming>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_Reserve" name="Reserve stock" camunda:type="external" camunda:topic="stock" camunda:taskPriority="10">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics camunda:collection="${items}" camunda:elementVariable="item">
+        <bpmn:completionCondition xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">${nrOfCompletedInstances == nrOfInstances}</bpmn:completionCondition>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:intermediateCatchEvent id="Event_Wait" name="Payment">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="MessageEventDefinition_1" messageRef="Message_Payment" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:subProcess id="Sub_Review" name="Review">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+      <bpmn:startEvent id="Sub_Start">
+        <bpmn:outgoing>Flow_S1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:scriptTask id="Activity_0x1abc" name="Compute score" scriptFormat="groovy" camunda:resultVariable="score">
+        <bpmn:incoming>Flow_S1</bpmn:incoming>
+        <bpmn:outgoing>Flow_S2</bpmn:outgoing>
+        <bpmn:script>return amount * 2</bpmn:script>
+      </bpmn:scriptTask>
+      <bpmn:endEvent id="Sub_End">
+        <bpmn:incoming>Flow_S2</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="Flow_S1" sourceRef="Sub_Start" targetRef="Activity_0x1abc" />
+      <bpmn:sequenceFlow id="Flow_S2" sourceRef="Activity_0x1abc" targetRef="Sub_End" />
+    </bpmn:subProcess>
+    <bpmn:userTask id="Task_Ship" name="Ship order" camunda:candidateGroups="warehouse">
+      <bpmn:extensionElements>
+        <camunda:executionListener event="end" delegateExpression="${shipAudit}" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:boundaryEvent id="Error_Ship" attachedToRef="Task_Ship">
+      <bpmn:outgoing>Flow_Err</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorEventDefinition_1" errorRef="Error_OutOfStock" camunda:errorCodeVariable="errCode" />
+    </bpmn:boundaryEvent>
+    <bpmn:scriptTask id="Task_Fail" name="Explode" scriptFormat="groovy" camunda:asyncBefore="true">
+      <bpmn:incoming>Flow_Err</bpmn:incoming>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+      <bpmn:script>throw new RuntimeException("boom: " + execution.getVariable("customer"))</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="EndEvent_Done" name="Shipped">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="EndEvent_Failed" name="Failed">
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+      <bpmn:terminateEventDefinition id="TerminateEventDefinition_1" />
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_Validate" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_Validate" targetRef="Task_Fraud" />
+    <bpmn:sequenceFlow id="Flow_Fraud" sourceRef="Task_Fraud" targetRef="Gateway_Amount" />
+    <bpmn:sequenceFlow id="Flow_Small" name="≤ 5000" sourceRef="Gateway_Amount" targetRef="Gateway_Join" />
+    <bpmn:sequenceFlow id="Flow_Large" name="&gt; 5000" sourceRef="Gateway_Amount" targetRef="Task_Approve">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">${amount &gt; 5000}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Approved" sourceRef="Task_Approve" targetRef="Gateway_Join" />
+    <bpmn:sequenceFlow id="Flow_3" sourceRef="Gateway_Join" targetRef="Task_Reserve" />
+    <bpmn:sequenceFlow id="Flow_4" sourceRef="Task_Reserve" targetRef="Event_Wait" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Event_Wait" targetRef="Sub_Review" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Sub_Review" targetRef="Task_Ship" />
+    <bpmn:sequenceFlow id="Flow_7" sourceRef="Task_Ship" targetRef="EndEvent_Done" />
+    <bpmn:sequenceFlow id="Flow_Err" sourceRef="Error_Ship" targetRef="Task_Fail" />
+    <bpmn:sequenceFlow id="Flow_8" sourceRef="Task_Fail" targetRef="EndEvent_Failed" />
+    <bpmn:textAnnotation id="TextAnnotation_1">
+      <bpmn:text>Orders above 1000 need approval</bpmn:text>
+    </bpmn:textAnnotation>
+    <bpmn:association id="Association_1" sourceRef="Gateway_Amount" targetRef="TextAnnotation_1" />
+  </bpmn:process>
+  <bpmn:message id="Message_Payment" name="paymentConfirmed" />
+  <bpmn:error id="Error_OutOfStock" name="OutOfStock" errorCode="OUT_OF_STOCK" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_1">
+      <bpmndi:BPMNShape id="Participant_Shop_di" bpmnElement="Participant_Shop" isHorizontal="true">
+        <dc:Bounds x="120" y="60" width="1260" height="520" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Sales_di" bpmnElement="Lane_Sales" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="1230" height="250" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_Warehouse_di" bpmnElement="Lane_Warehouse" isHorizontal="true">
+        <dc:Bounds x="150" y="310" width="1230" height="270" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="192" y="162" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="172" y="205" width="76" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Validate_di" bpmnElement="Task_Validate">
+        <dc:Bounds x="280" y="140" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Fraud_di" bpmnElement="Task_Fraud">
+        <dc:Bounds x="280" y="240" width="100" height="60" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Amount_di" bpmnElement="Gateway_Amount" isMarkerVisible="true">
+        <dc:Bounds x="435" y="155" width="50" height="50" />
+        <bpmndi:BPMNLabel><dc:Bounds x="437" y="125" width="46" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Approve_di" bpmnElement="Task_Approve">
+        <dc:Bounds x="540" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_Join_di" bpmnElement="Gateway_Join" isMarkerVisible="true">
+        <dc:Bounds x="695" y="155" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Reserve_di" bpmnElement="Task_Reserve">
+        <dc:Bounds x="300" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_Wait_di" bpmnElement="Event_Wait">
+        <dc:Bounds x="432" y="402" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="427" y="445" width="46" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sub_Review_di" bpmnElement="Sub_Review" isExpanded="true">
+        <dc:Bounds x="520" y="340" width="330" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sub_Start_di" bpmnElement="Sub_Start">
+        <dc:Bounds x="552" y="402" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_0x1abc_di" bpmnElement="Activity_0x1abc">
+        <dc:Bounds x="640" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Sub_End_di" bpmnElement="Sub_End">
+        <dc:Bounds x="782" y="402" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Ship_di" bpmnElement="Task_Ship">
+        <dc:Bounds x="920" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Error_Ship_di" bpmnElement="Error_Ship">
+        <dc:Bounds x="952" y="442" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Fail_di" bpmnElement="Task_Fail">
+        <dc:Bounds x="1060" y="480" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Done_di" bpmnElement="EndEvent_Done">
+        <dc:Bounds x="1102" y="402" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1099" y="378" width="42" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Failed_di" bpmnElement="EndEvent_Failed">
+        <dc:Bounds x="1222" y="502" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="1225" y="545" width="30" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="TextAnnotation_1_di" bpmnElement="TextAnnotation_1">
+        <dc:Bounds x="400" y="240" width="160" height="30" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1"><di:waypoint x="228" y="180" /><di:waypoint x="280" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2"><di:waypoint x="330" y="220" /><di:waypoint x="330" y="240" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Fraud_di" bpmnElement="Flow_Fraud"><di:waypoint x="380" y="260" /><di:waypoint x="460" y="260" /><di:waypoint x="460" y="205" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Small_di" bpmnElement="Flow_Small"><di:waypoint x="485" y="180" /><di:waypoint x="695" y="180" /><bpmndi:BPMNLabel><dc:Bounds x="500" y="162" width="40" height="14" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Large_di" bpmnElement="Flow_Large"><di:waypoint x="460" y="155" /><di:waypoint x="460" y="120" /><di:waypoint x="540" y="120" /><bpmndi:BPMNLabel><dc:Bounds x="470" y="102" width="40" height="14" /></bpmndi:BPMNLabel></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Approved_di" bpmnElement="Flow_Approved"><di:waypoint x="640" y="120" /><di:waypoint x="720" y="120" /><di:waypoint x="720" y="155" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3"><di:waypoint x="720" y="205" /><di:waypoint x="720" y="330" /><di:waypoint x="330" y="330" /><di:waypoint x="330" y="380" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4"><di:waypoint x="380" y="420" /><di:waypoint x="432" y="420" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5"><di:waypoint x="468" y="420" /><di:waypoint x="520" y="420" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_S1_di" bpmnElement="Flow_S1"><di:waypoint x="588" y="420" /><di:waypoint x="640" y="420" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_S2_di" bpmnElement="Flow_S2"><di:waypoint x="740" y="420" /><di:waypoint x="782" y="420" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_6_di" bpmnElement="Flow_6"><di:waypoint x="850" y="420" /><di:waypoint x="920" y="420" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_7_di" bpmnElement="Flow_7"><di:waypoint x="1020" y="420" /><di:waypoint x="1102" y="420" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Err_di" bpmnElement="Flow_Err"><di:waypoint x="970" y="478" /><di:waypoint x="970" y="520" /><di:waypoint x="1060" y="520" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_8_di" bpmnElement="Flow_8"><di:waypoint x="1160" y="520" /><di:waypoint x="1222" y="520" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Association_1_di" bpmnElement="Association_1"><di:waypoint x="470" y="195" /><di:waypoint x="480" y="240" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -81,6 +81,12 @@ fn specs_vec() -> Vec<Spec> {
         s("ui_modification_queue", "Read or edit the Modify tab of the open instance: list | add (instruction) | clear | apply.", obj(json!({"action": {"type": "string", "enum": ["list", "add", "clear", "apply"]}, "instruction": {"type": "object"}}), &["action"])),
         s("ui_settings", "Read or change settings: theme (system|light|dark), language (system or a pack tag such as ru-RU; UI text only, tool output stays English), density, wheel_zooms, inertia, pointer_wrap (auto|off), zoom_speed / zoom_speed_mouse / zoom_speed_keyboard / alt_speed (multipliers 0.1–10; effective = global × device, Alt held multiplies by alt_speed), refresh_instance_secs, refresh_list_secs, page_size, paused.", obj(json!({"set": {"type": "object"}}), &[])),
         s("ui_connect", "Connect to an engine (URL, user, password) or disconnect.", obj(json!({"url": {"type": "string"}, "user": {"type": "string"}, "password": {"type": "string"}, "disconnect": {"type": "boolean"}}), &[])),
+        // ---------- XML and diffs ----------
+        s("ui_view_xml", "Open (or switch to) the XML view of the active diagram (Ctrl+U), scrolled to and highlighting `element_id` (default: the selection). In a diff it opens the git-style XML diff. ui_state then reports the view: highlight line/col, find, diff line counts.", obj(json!({"element_id": {"type": "string"}}), &[])),
+        s("ui_xml", "Drive the active XML view: find text (empty closes find), step find matches (next|prev), step diff hunks (next_change|prev_change), clear the highlight, toggle whole_file in a diff.", obj(json!({"find": {"type": "string"}, "step": {"type": "string", "enum": ["next", "prev", "next_change", "prev_change"]}, "clear_highlight": {"type": "boolean"}, "whole_file": {"type": "boolean"}}), &[])),
+        s("ui_compare", "Open the visual diff of two BPMN documents. Each side is a local file path or `def:<definition id or key>` (a key means its latest version). Omit a side to open the picker for it.", obj(json!({"left": {"type": "string", "description": "before"}, "right": {"type": "string", "description": "after"}}), &[])),
+        s("ui_diff", "Drive the active diff view: mode (unified | before | after | side-by-side), step to the next/prev change (selects and reveals it), show/hide statuses, dim unchanged items. Returns the diff state.", obj(json!({"mode": {"type": "string", "enum": ["unified", "before", "after", "side-by-side"]}, "step": {"type": "string", "enum": ["next", "prev"]}, "show": {"type": "object", "description": "{added, removed, changed, moved: bool}"}, "dim_unchanged": {"type": "boolean"}}), &[])),
+        s("diff_bpmn", "Semantic diff of two BPMN documents without opening UI: added / removed / changed / moved elements and flows with every changed property (old → new), plus process- and file-level changes. Sides as in ui_compare.", obj(json!({"left": {"type": "string"}, "right": {"type": "string"}, "limit": {"type": "integer", "default": 500}}), &["left", "right"])),
     ]
 }
 
@@ -193,6 +199,29 @@ fn element_full(m: &bpmn::Model, i: usize) -> Value {
 }
 
 /// Resolve a definition id or key to an id using the cache (keys need the definition list).
+/// A document side for diff tools: `def:<id or key>` or a local path.
+fn parse_source(app: &mut App, s: &str) -> Result<crate::places::source::DocSource, String> {
+    match s.strip_prefix("def:") {
+        Some(d) => {
+            if !d.contains(':') && app.cache.defs.data.is_none() {
+                app.ensure_definitions();
+                if app.net.is_none() {
+                    return Err("not connected to an engine".into());
+                }
+                return Err(RETRY.into());
+            }
+            resolve_definition(app, d).map(crate::places::source::DocSource::Definition).ok_or_else(|| format!("unknown definition {d}"))
+        }
+        None => {
+            let p = crate::paths::expand_tilde(s);
+            if !p.is_file() {
+                return Err(format!("no such file: {}", p.display()));
+            }
+            Ok(crate::places::source::DocSource::File(p))
+        }
+    }
+}
+
 fn resolve_definition(app: &App, s: &str) -> Option<String> {
     if s.contains(':') {
         return Some(s.to_string());
@@ -266,6 +295,14 @@ fn place_json(app: &App) -> Value {
         Place::Batches(_) => json!({"kind": "batches"}),
         Place::Settings(_) => json!({"kind": "settings"}),
         Place::File(p) => json!({"kind": "file", "path": p.path, "diagram": p.model.as_ref().map(|m| diagram_json_model(&p.view, m))}),
+        Place::Xml(p) => p.describe(),
+        Place::Diff(p) => {
+            let mut v = p.describe();
+            if let (Some(m), Some(o)) = (p.model_of_primary(), v.as_object_mut()) {
+                o.insert("diagram".into(), diagram_json_model(&p.views[p.primary_view()], m));
+            }
+            v
+        }
     }
 }
 
@@ -339,6 +376,12 @@ fn with_diagram<R>(app: &mut App, f: impl FnOnce(&mut crate::viewport::DiagramVi
             let m = p.model.clone().ok_or("file not parsed")?;
             if let Some(Place::File(p)) = app.tabs.get_mut(active).map(|t| t.place_mut()) {
                 return Ok(f(&mut p.view, &m));
+            }
+            return Err("no diagram".into());
+        }
+        Some(Place::Diff(_)) => {
+            if let Some(Place::Diff(p)) = app.tabs.get_mut(active).map(|t| t.place_mut()) {
+                return p.with_view(f).ok_or_else(|| RETRY.to_string());
             }
             return Err("no diagram".into());
         }
@@ -1088,7 +1131,8 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                     match app.tabs.get_mut(app.active).map(|t| t.place_mut()) {
                         Some(Place::Definition(p)) => p.dock_tab = find(&crate::places::definition::DOCK_TABS)?,
                         Some(Place::Instance(p)) => p.dock_tab = find(&crate::places::instance::DOCK_TABS)?,
-                        Some(Place::File(p)) => p.dock_tab = find(&["Inspector", "Matches"])?,
+                        Some(Place::File(p)) => p.dock_tab = find(&crate::places::file::DOCK_TABS)?,
+                        Some(Place::Diff(p)) => p.dock_tab = find(&crate::places::diff::DOCK_TABS)?,
                         _ => return Err("this place has no dock tabs".into()),
                     }
                 }
@@ -1293,6 +1337,91 @@ pub fn dispatch(app: &mut App, call: McpCall) {
                 app.disconnect();
                 app.connect_to(p);
                 Ok(Some(json!({"ok": true, "hint": "call engine_status to see the result"})))
+            }
+            "ui_view_xml" => {
+                let tab = app.tabs.get(app.active).ok_or("no tab")?;
+                let (doc, sel) = crate::places::xml::xml_target(tab.place(), app).ok_or("the active place has no diagram")?;
+                let element = arg_str(&a, "element_id").map(String::from).or(sel);
+                app.navigate(Nav::Xml { doc, element: element.clone() }, NavMode::Reuse);
+                Ok(Some(json!({"ok": true, "element": element, "hint": "ui_state shows the XML view once loaded"})))
+            }
+            "ui_xml" => {
+                let Some(Place::Xml(p)) = app.tabs.get_mut(app.active).map(|t| t.place_mut()) else { return Err("the active tab is not an XML view (use ui_view_xml)".into()) };
+                if let Some(q) = arg_str(&a, "find") {
+                    p.set_find(q);
+                }
+                if arg_bool(&a, "clear_highlight") == Some(true) {
+                    p.highlight = None;
+                }
+                if let Some(w) = arg_bool(&a, "whole_file") {
+                    p.set_whole_file(w);
+                }
+                match arg_str(&a, "step") {
+                    Some("next") => p.step_find(true),
+                    Some("prev") => p.step_find(false),
+                    Some("next_change") => p.step_change(true),
+                    Some("prev_change") => p.step_change(false),
+                    Some(o) => return Err(format!("unknown step {o}")),
+                    None => {}
+                }
+                Ok(Some(p.describe()))
+            }
+            "ui_compare" => {
+                let left = arg_str(&a, "left").map(|s| parse_source(app, s)).transpose()?;
+                let right = arg_str(&a, "right").map(|s| parse_source(app, s)).transpose()?;
+                let mode = if left.is_some() && right.is_some() { NavMode::Reuse } else { NavMode::NewTab };
+                app.navigate(Nav::Diff { left, right }, mode);
+                Ok(Some(json!({"ok": true, "hint": "ui_state shows the diff once both documents are loaded; ui_diff drives it"})))
+            }
+            "ui_diff" => {
+                let Some(Place::Diff(p)) = app.tabs.get_mut(app.active).map(|t| t.place_mut()) else { return Err("the active tab is not a diff (use ui_compare)".into()) };
+                if let Some(m) = arg_str(&a, "mode") {
+                    p.set_mode(crate::places::diff::DiffMode::from_key(m).ok_or(format!("unknown mode {m}"))?);
+                }
+                if let Some(show) = a.get("show").and_then(|s| s.as_object()) {
+                    let get = |k: &str, cur: bool| show.get(k).and_then(|v| v.as_bool()).unwrap_or(cur);
+                    let f = p.filter;
+                    p.set_filter(crate::places::diff::Filter { added: get("added", f.added), removed: get("removed", f.removed), changed: get("changed", f.changed), moved: get("moved", f.moved) });
+                }
+                if let Some(d) = arg_bool(&a, "dim_unchanged") {
+                    p.set_dim_unchanged(d);
+                }
+                match arg_str(&a, "step") {
+                    Some("next") => p.step(true),
+                    Some("prev") => p.step(false),
+                    Some(o) => return Err(format!("unknown step {o}")),
+                    None => {}
+                }
+                if p.data.is_none() && p.error.is_none() && p.left.is_some() && p.right.is_some() {
+                    return Err(RETRY.into());
+                }
+                Ok(Some(p.describe()))
+            }
+            "diff_bpmn" => {
+                let left = parse_source(app, need(&a, "left")?)?;
+                let right = parse_source(app, need(&a, "right")?)?;
+                let load = |app: &mut App, s: &crate::places::source::DocSource| -> Result<std::sync::Arc<bpmn::Model>, String> {
+                    match s {
+                        crate::places::source::DocSource::File(p) => crate::places::source::load_file(p),
+                        crate::places::source::DocSource::Definition(id) => match app.diagram(id) {
+                            Some(m) => Ok(m),
+                            None => match app.cache.diagram_error(id) {
+                                Some(e) => Err(format!("cannot load {id}: {e}")),
+                                None if app.net.is_none() => Err("not connected to an engine".into()),
+                                None => Err(RETRY.into()),
+                            },
+                        },
+                    }
+                };
+                let old = load(app, &left)?;
+                let new = load(app, &right)?;
+                let d = bpmn::diff::diff(&old, &new);
+                let limit = arg_i(&a, "limit").unwrap_or(500).max(0) as usize;
+                Ok(Some(json!({
+                    "left": left.detail(), "right": right.detail(), "counts": crate::places::diff::counts_json(&d),
+                    "items": d.items.iter().take(limit).map(|it| json!({"id": it.id, "old_id": it.old_id, "status": crate::places::diff::status_key(it.status), "flow": it.is_flow, "label": it.label, "layout_changed": it.layout_changed, "changes": it.props})).collect::<Vec<_>>(),
+                    "truncated": d.items.len() > limit, "document": d.document,
+                })))
             }
             other => Err(format!("unknown tool {other}")),
         }

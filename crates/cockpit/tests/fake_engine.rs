@@ -180,6 +180,35 @@ fn app_loads_definition_and_instance_from_the_engine_and_mcp_writes_reach_it() {
     let st = state(harness.state_mut());
     assert_eq!(st["place"]["dock_tab"], "Timeline");
     assert_eq!(st["place"]["diagram"]["selection"]["element_id"], "Task_Approve");
+    // Ctrl+F is a global command; every diagram place must receive it (the instance view
+    // once dropped it).
+    call(harness.state_mut(), "ui_key", json!({"key": "F", "ctrl": true})).unwrap();
+    harness.run_steps(3);
+    assert!(!state(harness.state_mut())["place"]["diagram"]["find"].is_null(), "Ctrl+F opens find in the instance view");
+    call(harness.state_mut(), "ui_key", json!({"key": "Escape"})).unwrap();
+    harness.run_steps(2);
+
+    // 4b. XML of the instance's definition, at the selected element; an engine definition is
+    // exported to the data directory so external editors get a real path.
+    let data = std::env::temp_dir().join(format!("flightdeck-data-{}", std::process::id()));
+    harness.state_mut().data_dir = Some(data.clone());
+    call(harness.state_mut(), "ui_view_xml", json!({})).unwrap();
+    settle(&mut harness, "xml view", |app| state(app)["place"]["highlight"]["id"] == "Task_Approve");
+    let path = cockpit::places::source::path_on_disk(harness.state(), &cockpit::places::source::DocSource::Definition(DEF.into()), &harness.state().cache.diagrams[DEF].data.clone().unwrap()).unwrap();
+    assert!(path.starts_with(&data) && !path.file_name().unwrap().to_string_lossy().contains(':'), "{path:?}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order.bpmn")).unwrap());
+    std::fs::remove_dir_all(&data).unwrap();
+    call(harness.state_mut(), "ui_tabs", json!({"action": "close"})).unwrap();
+    harness.run_steps(2);
+
+    // 4c. compare the deployed definition with a local file.
+    let v2 = concat!(env!("CARGO_MANIFEST_DIR"), "/../bpmn/tests/fixtures/order-v2.bpmn");
+    call(harness.state_mut(), "ui_compare", json!({"left": "def:order_process", "right": v2})).unwrap();
+    settle(&mut harness, "diff", |app| state(app)["place"]["loaded"] == true);
+    assert!(state(harness.state_mut())["place"]["counts"]["added"].as_u64().unwrap() >= 2);
+    call(harness.state_mut(), "ui_tabs", json!({"action": "close"})).unwrap();
+    harness.run_steps(2);
+    assert_eq!(state(harness.state_mut())["place"]["kind"], "instance");
 
     // 5. a write through MCP reaches the engine with a typed body; a bad write surfaces the engine's message
     call(harness.state_mut(), "set_variable", json!({"id": PI, "name": "note", "value": {"k": 1}})).err();

@@ -397,10 +397,10 @@ fn form_card(ui: &mut Ui, app: &mut App, rect: Rect) {
 
 fn offline_button(ui: &mut Ui, app: &mut App) {
     if ui.button(t!("connect-open-bpmn")).on_hover_text(t!("connect-open-bpmn-tip")).clicked() {
-        if let Some(path) = std::env::var("FLIGHTDECK_BPMN").ok().map(std::path::PathBuf::from) {
-            app.navigate(crate::state::Nav::File { path }, crate::state::NavMode::NewTab);
-            app.offline = true;
-        }
+        app.pick_and_open_file();
+    }
+    if ui.button(t!("cmd-compare")).clicked() {
+        app.navigate(crate::state::Nav::Diff { left: None, right: None }, crate::state::NavMode::NewTab);
     }
 }
 

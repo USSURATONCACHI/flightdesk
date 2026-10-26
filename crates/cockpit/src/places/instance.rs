@@ -119,6 +119,10 @@ impl InstancePlace {
         self.hist.data.as_ref().map(|h| h.is_finished()).unwrap_or(false)
     }
 
+    /// The definition this instance runs (once known).
+    pub fn definition_id_pub(&self) -> Option<String> {
+        self.definition_id()
+    }
     fn definition_id(&self) -> Option<String> {
         self.hist.data.as_ref().map(|h| h.process_definition_id.clone())
     }
@@ -472,8 +476,9 @@ impl InstancePlace {
             let style = tokens.diagram_style();
             let settings = app.diagram_settings();
             let model2 = model.clone();
+            let xml_editor = !app.settings.xml_editor.trim().is_empty();
             let out = viewport::Diagram { model: &model, style: &style, settings: &settings }.show(ui, &mut self.view, &mut self.overlays, &extra, &mut |ui, target| {
-                crate::app::diagram_context_menu(ui, &model2, target, &mut actions);
+                crate::app::diagram_context_menu(ui, &model2, target, xml_editor, &mut actions);
                 if let Some(bpmn::Ref::Element(i)) = target {
                     let e = &model2.elements[i];
                     if e.kind.is_flow_node() && !matches!(e.kind, bpmn::ElementKind::BoundaryEvent | bpmn::ElementKind::StartEvent) {
@@ -576,11 +581,14 @@ impl InstancePlace {
         for a in actions {
             match a {
                 InspectorAction::Select(r) => {
-                    if matches!(r, bpmn::Ref::Element(usize::MAX)) {
-                        self.view.fit_all();
-                    } else {
-                        self.view.select(Some(r));
-                        self.view.fit_refs(&model, std::iter::once(r));
+                    self.view.select(Some(r));
+                    self.view.fit_refs(&model, std::iter::once(r));
+                }
+                InspectorAction::FitDiagram => self.view.fit_all(),
+                InspectorAction::ViewXml(_) | InspectorAction::XmlExternal(..) => {
+                    if let Some(d) = &def_id {
+                        let source = crate::places::source::DocSource::Definition(d.clone());
+                        crate::places::xml::handle_action(app, crate::places::xml::XmlDoc::Single(source.clone()), &[(source, model.clone())], &a);
                     }
                 }
                 InspectorAction::OpenDefinitionKey(k) => app.navigate(Nav::DefinitionKey { key: k }, NavMode::Here),
@@ -1121,9 +1129,6 @@ impl InstancePlace {
                     kv(ui, "follow-up", &crate::util::fmt_local(f));
                 }
                 kv(ui, "priority", &t.priority.to_string());
-                if let Some(d) = &t.description {
-                    kv(ui, "description", d);
-                }
                 // assignee editor
                 ui.horizontal(|ui| {
                     ui.add_sized([120.0, 18.0], egui::Label::new(RichText::new(crate::i18n::kv_label("assignee")).weak().size(12.0)).halign(egui::Align::Max));
@@ -1191,6 +1196,9 @@ impl InstancePlace {
                         }));
                     }
                 });
+                if let Some(d) = &t.description {
+                    crate::widgets::doc_block(ui, ("task-desc", &t.id), "description", d);
+                }
             });
             ui.add_space(4.0);
         }

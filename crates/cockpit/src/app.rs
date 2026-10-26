@@ -103,6 +103,12 @@ pub struct App {
     pub mcp_error: Option<String>,
     pub synthetic_events: Vec<egui::Event>,
     pub last_diagram_viewport: egui::Rect,
+    /// Where exported files live (definition XML for external editors). Handed in by the
+    /// binary; `None` in tests, which then cannot export.
+    pub data_dir: Option<PathBuf>,
+    /// Results of background work (dialogs, external programs), applied on the UI thread.
+    bg_tx: std::sync::mpsc::Sender<crate::widgets::AppAction>,
+    bg_rx: std::sync::mpsc::Receiver<crate::widgets::AppAction>,
 }
 
 pub struct ScreenshotPlan {
@@ -119,6 +125,7 @@ impl App {
         tokens.apply(egui_ctx, settings.density);
         egui_ctx.set_zoom_factor(scale);
         let profile = settings.engine();
+        let (bg_tx, bg_rx) = std::sync::mpsc::channel();
         Self {
             settings,
             settings_dirty: false,
@@ -168,7 +175,82 @@ impl App {
             mcp_error: None,
             synthetic_events: Vec::new(),
             last_diagram_viewport: egui::Rect::NOTHING,
+            data_dir: None,
+            bg_tx,
+            bg_rx,
         }
+    }
+
+    /// Run blocking work (a native dialog, an external program) off the UI thread; what it
+    /// returns is applied to the app on the next frame.
+    pub fn spawn_bg(&self, work: impl FnOnce() -> Option<crate::widgets::AppAction> + Send + 'static) {
+        let tx = self.bg_tx.clone();
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            if let Some(a) = work() {
+                let _ = tx.send(a);
+            }
+            if let Some(c) = ctx {
+                c.request_repaint();
+            }
+        });
+    }
+
+    /// Copy to the clipboard and say what was copied.
+    pub fn copy_with_toast(&mut self, text: String) {
+        if let Some(ctx) = &self.ctx {
+            ctx.copy_text(text.clone());
+        }
+        self.toasts.push(ToastKind::Info, t!("toast-copied", what = crate::util::ellipsize(&text, 120)));
+    }
+
+    /// Put a local file at the top of the recent-files list.
+    pub fn remember_file(&mut self, path: &std::path::Path) {
+        let p = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()).display().to_string();
+        self.settings.recent_files.retain(|f| *f != p);
+        self.settings.recent_files.insert(0, p);
+        self.settings.recent_files.truncate(12);
+        self.settings_dirty = true;
+    }
+
+    /// Open a local BPMN file chosen in the native dialog (Ctrl+O).
+    pub fn pick_and_open_file(&self) {
+        let title = t!("open-file-title");
+        let start = self.settings.recent_files.first().and_then(|f| std::path::Path::new(f).parent().map(|p| p.to_path_buf()));
+        self.spawn_bg(move || {
+            let path = crate::platform::files::pick_bpmn_file(&title, start.as_deref())?;
+            Some(Box::new(move |app: &mut App| app.open_file(path)))
+        });
+    }
+
+    pub fn open_file(&mut self, path: PathBuf) {
+        self.remember_file(&path);
+        self.navigate(Nav::File { path: path.clone() }, NavMode::Reuse);
+        if self.net.is_none() {
+            self.offline = true;
+        }
+    }
+
+    /// Start a comparison from the current document: a definition is compared with its
+    /// previous version, anything else opens the picker with this document on the "after" side.
+    pub fn open_compare(&mut self) {
+        use crate::places::source::DocSource;
+        let (left, right) = match self.tabs.get(self.active).map(|t| t.place()) {
+            Some(Place::Definition(p)) => (self.previous_version(&p.def_id).map(DocSource::Definition), Some(DocSource::Definition(p.def_id.clone()))),
+            Some(Place::Instance(p)) => (None, p.definition_id_pub().map(DocSource::Definition)),
+            Some(Place::File(p)) => (None, Some(DocSource::File(p.path.clone()))),
+            Some(Place::Diff(p)) => (p.left.clone(), p.right.clone()),
+            _ => (None, None),
+        };
+        let mode = if left.is_some() && right.is_some() { NavMode::Reuse } else { NavMode::NewTab };
+        self.navigate(Nav::Diff { left, right }, mode);
+    }
+
+    /// Id of the version before `def_id` of the same key, when the cache knows it.
+    pub fn previous_version(&self, def_id: &str) -> Option<String> {
+        let d = self.cache.def_by_id(def_id)?;
+        let all = self.cache.all_defs.data.as_ref()?;
+        all.iter().filter(|x| x.key == d.key && x.version < d.version && x.tenant_id == d.tenant_id).max_by_key(|x| x.version).map(|x| x.id.clone())
     }
 
     /// Whether the given mode currently means dark, consulting the OS for `System`.
@@ -438,12 +520,25 @@ impl App {
             Nav::Batches => Place::Batches(BatchesPlace::default()),
             Nav::Settings => Place::Settings(SettingsPlace::default()),
             Nav::File { path } => Place::File(Box::new(FilePlace::new(path))),
+            Nav::Xml { doc, element } => Place::Xml(Box::new(XmlPlace::new(doc, element))),
+            Nav::Diff { left, right } => Place::Diff(Box::new(DiffPlace::new(left, right))),
         })
     }
 
     fn apply_pending_nav(&mut self) {
         let pending = std::mem::take(&mut self.pending_nav);
         for (nav, mode) in pending {
+            let mode = match mode {
+                NavMode::Reuse => match self.tabs.iter().position(|t| t.place().shows(&nav)) {
+                    Some(i) => {
+                        self.active = i;
+                        self.tabs[i].place_mut().retarget(nav);
+                        continue;
+                    }
+                    None => NavMode::NewTab,
+                },
+                m => m,
+            };
             let Some(place) = self.build_place(nav) else { continue };
             match mode {
                 NavMode::NewTab => {
@@ -467,6 +562,7 @@ impl App {
                         t.replace(place);
                     }
                 }
+                NavMode::Reuse => unreachable!("resolved above"),
             }
         }
     }
@@ -917,6 +1013,14 @@ impl App {
                 cb(self);
             }
         }
+        while let Ok(a) = self.bg_rx.try_recv() {
+            a(self);
+        }
+        // BPMN files dropped onto the window open in tabs.
+        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        for p in dropped {
+            self.open_file(p);
+        }
         self.drain_mcp();
         self.apply_pending_nav();
         self.health_check();
@@ -972,6 +1076,15 @@ impl App {
                     _ => {}
                 }
             }
+            // Requests every diagram handles alike go through one path, so no place can miss them.
+            if let Some(view) = tab.place_mut().diagram_view_mut() {
+                apply_diagram_request(view, &req);
+            }
+            if req == Some(PlaceRequest::ViewXml) {
+                if let Some((doc, element)) = crate::places::xml::xml_target(tab.place(), self) {
+                    self.navigate(Nav::Xml { doc, element }, NavMode::Reuse);
+                }
+            }
             match tab.place_mut() {
                 Place::Definitions(p) => {
                     if req == Some(PlaceRequest::FocusFilter) {
@@ -980,7 +1093,6 @@ impl App {
                     p.ui(root, self)
                 }
                 Place::Definition(p) => {
-                    apply_diagram_request(&mut p.view, &req);
                     if req == Some(PlaceRequest::FocusFilter) {
                         p.dock_tab = 1;
                         p.filter_focus = true;
@@ -993,10 +1105,14 @@ impl App {
                 Place::Incidents(p) => p.ui(root, self),
                 Place::Batches(p) => p.ui(root, self),
                 Place::Settings(p) => p.ui(root, self),
-                Place::File(p) => {
-                    apply_diagram_request(&mut p.view, &req);
+                Place::File(p) => p.ui(root, self),
+                Place::Xml(p) => {
+                    if req == Some(PlaceRequest::OpenFind) {
+                        p.open_find();
+                    }
                     p.ui(root, self)
                 }
+                Place::Diff(p) => p.ui(root, self),
             }
             self.tabs.insert(active, tab);
         } else {
@@ -1048,12 +1164,13 @@ fn apply_diagram_request(view: &mut crate::viewport::DiagramView, req: &Option<P
         Some(PlaceRequest::Zoom(f)) => {
             view.camera.target.zoom = (view.camera.target.zoom * f).clamp(crate::viewport::camera::MIN_ZOOM, crate::viewport::camera::MAX_ZOOM);
         }
-        _ => {}
+        Some(PlaceRequest::Reveal(id)) => view.pending_reveal = Some(id.clone()),
+        Some(PlaceRequest::FocusFilter) | Some(PlaceRequest::ViewXml) | None => {}
     }
 }
 
 /// Context menu items shared by every diagram (element-level, engine-independent).
-pub fn diagram_context_menu(ui: &mut egui::Ui, model: &Model, target: Option<bpmn::Ref>, actions: &mut Vec<crate::inspector::InspectorAction>) {
+pub fn diagram_context_menu(ui: &mut egui::Ui, model: &Model, target: Option<bpmn::Ref>, xml_editor: bool, actions: &mut Vec<crate::inspector::InspectorAction>) {
     use crate::inspector::InspectorAction as A;
     match target {
         Some(bpmn::Ref::Element(i)) => {
@@ -1094,6 +1211,8 @@ pub fn diagram_context_menu(ui: &mut egui::Ui, model: &Model, target: Option<bpm
                     }
                 }
             }
+            ui.separator();
+            crate::places::xml::context_items(ui, Some(&e.id), xml_editor, actions);
         }
         Some(bpmn::Ref::Flow(i)) => {
             let f = &model.flows[i];
@@ -1118,13 +1237,17 @@ pub fn diagram_context_menu(ui: &mut egui::Ui, model: &Model, target: Option<bpm
                     ui.close();
                 }
             }
+            ui.separator();
+            crate::places::xml::context_items(ui, Some(&f.id), xml_editor, actions);
         }
         None => {
             ui.label(RichText::new(t!("ctx-diagram")).weak());
             if ui.button(format!("{:<22} 0", t!("ctx-fit-diagram"))).clicked() {
-                actions.push(A::Select(bpmn::Ref::Element(usize::MAX)));
+                actions.push(A::FitDiagram);
                 ui.close();
             }
+            ui.separator();
+            crate::places::xml::context_items(ui, None, xml_editor, actions);
         }
     }
 }

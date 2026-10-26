@@ -351,18 +351,36 @@ mod tests {
         assert!(used.len() > 300, "scan found only {} ids", used.len());
     }
 
-    /// Tiny matcher for `t!("id"` without pulling in a regex crate: returns every id.
+    /// Message ids passed to `t!` without pulling in a regex crate: every string literal in the
+    /// macro's first argument, so ids chosen by `if` / `match` inside the call count too.
     fn regex_lite(_pattern: &str) -> impl Fn(&str) -> Vec<String> {
         |src: &str| {
             let mut out = vec![];
             let mut rest = src;
-            while let Some(i) = rest.find("t!(\"") {
-                let after = &rest[i + 4..];
-                if let Some(j) = after.find('"') {
-                    let id = &after[..j];
-                    if !id.is_empty() && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') { out.push(id.to_string()); }
-                    rest = &after[j..];
-                } else { break; }
+            while let Some(i) = rest.find("t!(") {
+                let arg = &rest[i + 3..];
+                // `assert!(` ends in `t!(` too: only a whole `t!` (or `crate::t!`) counts.
+                if rest[..i].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                    rest = arg;
+                    continue;
+                }
+                // The first argument ends at the first comma or closing paren at depth 0.
+                let (mut depth, mut end, mut in_str) = (0i32, arg.len(), false);
+                for (k, c) in arg.char_indices() {
+                    match c {
+                        '"' => in_str = !in_str,
+                        _ if in_str => {}
+                        '(' | '{' | '[' => depth += 1,
+                        ')' | '}' | ']' if depth == 0 => { end = k; break; }
+                        ')' | '}' | ']' => depth -= 1,
+                        ',' if depth == 0 => { end = k; break; }
+                        _ => {}
+                    }
+                }
+                for (n, lit) in arg[..end].split('"').enumerate() {
+                    if n % 2 == 1 && !lit.is_empty() && lit.contains('-') && lit.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') { out.push(lit.to_string()); }
+                }
+                rest = &arg[end.min(arg.len())..];
             }
             out
         }

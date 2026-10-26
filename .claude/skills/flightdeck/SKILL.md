@@ -49,6 +49,14 @@ project `.mcp.json` registers it; approve it or run
   off-screen hits (it hides them above 8 to avoid clutter; the minimap dots always show).
   `ui_find` with `goto: <index>` or `cycle: next|prev` makes a hit current and glides the camera
   to it, exactly like clicking an edge arrow or pressing Enter.
+- XML: `ui_view_xml` (optional `element_id`, default the selection) opens or switches to the XML
+  tab of the current diagram with that element highlighted; `ui_state.place.highlight` gives its
+  line/col. `ui_xml` finds text, steps matches or diff hunks, clears the highlight.
+- Diffs: `ui_compare` with `left` / `right` as file paths or `def:<id|key>` opens the visual
+  diff; `ui_diff` sets `mode` (unified | before | after | side-by-side), `step`s through changes
+  (selecting each), filters statuses. `diff_bpmn` returns the semantic diff (added / removed /
+  changed / moved items with old → new property values) without UI — use it to explain what
+  changed between versions, then show it with `ui_compare`.
 - `ui_settings` also reads/sets `language` (`system` or a pack tag such as `ru-RU`); UI text
   follows it, tool output stays English.
 - After navigation give the UI a moment, then `ui_state` or `ui_screenshot` to verify.

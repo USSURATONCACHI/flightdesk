@@ -138,6 +138,9 @@ pub struct DiagramView {
     dial_wrap: super::wrap::PointerWrap,
     /// Set by Shift+F; the owning place fits the camera to its tokens and clears it.
     pub fit_tokens_marker: bool,
+    /// Element or flow id to select and bring into view as soon as the model is drawn (set
+    /// by navigation from another tab, e.g. "Show in diagram" in the XML view).
+    pub pending_reveal: Option<String>,
     id: Id,
 }
 
@@ -169,6 +172,7 @@ impl DiagramView {
             pan_wrap: Default::default(),
             dial_wrap: Default::default(),
             fit_tokens_marker: false,
+            pending_reveal: None,
             find_fade: HashSet::new(),
             find_dim_primed: false,
             last_viewport: Rect::NOTHING,
@@ -354,6 +358,19 @@ fn show_impl(
     }
     if let Some(r) = view.fit_request.take() {
         view.camera.fit(rect, r, 24.0, 3.0);
+    }
+
+    if let Some(id) = view.pending_reveal.take() {
+        if let Some(r) = model.lookup(&id) {
+            if view.selection != Some(r) {
+                out.selection_changed = true;
+            }
+            view.select(Some(r));
+            match r {
+                Ref::Element(i) => view.fit_element(model, i),
+                Ref::Flow(_) => view.fit_refs(model, std::iter::once(r)),
+            }
+        }
     }
 
     let text_focus = text_input_focused(&ctx, view.id);
@@ -1275,6 +1292,7 @@ fn tooltip(ui: &mut Ui, view: &DiagramView, model: &Model, overlays: &Overlays, 
                     if let Some(c) = &f.condition {
                         ui.label(egui::RichText::new(&c.text).monospace().size(11.0));
                     }
+                    extra(ui, &f.id);
                     find_explanation(ui, view, model, style, h);
                 }
             }

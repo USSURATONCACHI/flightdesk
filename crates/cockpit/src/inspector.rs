@@ -13,6 +13,12 @@ pub enum InspectorAction {
     /// Find (historic) instances that executed this activity.
     ExecutedAt(String),
     IncidentsAt(String),
+    /// Fit the whole diagram into view.
+    FitDiagram,
+    /// Open the document's XML view at this element (or the start).
+    ViewXml(Option<String>),
+    /// Open the document in an external program or copy `path:line:col` of the element.
+    XmlExternal(Option<String>, crate::places::xml::External),
 }
 
 /// Runtime facts the owning place knows about an element.
@@ -50,9 +56,6 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
             kv(ui, "name", n);
         }
         kv(ui, "type", &crate::i18n::bpmn_kind(&e.kind));
-        if let Some(d) = &e.documentation {
-            kv(ui, "documentation", d);
-        }
         if let Some(l) = e.lane {
             if kv_link(ui, "lane", m.elements[l].display_name()) {
                 actions.push(InspectorAction::Select(Ref::Element(l)));
@@ -474,6 +477,10 @@ fn element(ui: &mut Ui, m: &Model, e: &Element, facts: &RuntimeFacts, in_instanc
         }
         code_block(ui, &xml);
     });
+    // Last, so a long text never pushes the fields above out of sight.
+    if let Some(d) = &e.documentation {
+        crate::widgets::doc_block(ui, ("doc", &e.id), "documentation", d);
+    }
 }
 
 fn flow(ui: &mut Ui, m: &Model, f: &Flow, actions: &mut Vec<InspectorAction>) {
@@ -499,9 +506,6 @@ fn flow(ui: &mut Ui, m: &Model, f: &Flow, actions: &mut Vec<InspectorAction>) {
             if kv_link(ui, "to", m.elements[t].display_name()) {
                 actions.push(InspectorAction::Select(Ref::Element(t)));
             }
-        }
-        if let Some(d) = &f.documentation {
-            kv(ui, "documentation", d);
         }
     });
     if f.condition.is_some() || f.is_default {
@@ -547,6 +551,9 @@ fn flow(ui: &mut Ui, m: &Model, f: &Flow, actions: &mut Vec<InspectorAction>) {
         }
         code_block(ui, &xml);
     });
+    if let Some(d) = &f.documentation {
+        crate::widgets::doc_block(ui, ("doc", &f.id), "documentation", d);
+    }
 }
 
 fn fields(ui: &mut Ui, fields: &[bpmn::FieldInjection]) {

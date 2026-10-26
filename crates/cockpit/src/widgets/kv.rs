@@ -52,6 +52,61 @@ pub fn kv_opt(ui: &mut Ui, key: &str, value: &str, mono: bool) -> egui::Response
     resp.inner
 }
 
+/// Documentation or a description: a labelled block rendered as Markdown-lite (line breaks kept,
+/// see `widgets::markdown`) at the full width of the panel, folded when long. Viewers place it
+/// after every other field so a long text never pushes the short fields out of sight.
+pub fn doc_block(ui: &mut Ui, id: impl std::hash::Hash + std::fmt::Debug, key: &str, text: &str) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    let key = crate::i18n::kv_label(key);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.label(RichText::new(key).color(ui.visuals().weak_text_color()).size(12.0));
+        crate::widgets::copy_button(ui, text);
+    });
+    let id = ui.make_persistent_id(("doc-block", id));
+    let expanded = ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    const FOLD_AT: usize = 14;
+    let long = super::markdown::weight(text) > FOLD_AT + 4;
+    let shown = if long && !expanded { fold(text, FOLD_AT) } else { text.to_string() };
+    egui::Frame::new().fill(ui.visuals().faint_bg_color).corner_radius(4.0).inner_margin(egui::Margin { left: 8, right: 6, top: 5, bottom: 5 }).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        super::markdown::show(ui, &shown);
+        if long {
+            let hidden = super::markdown::weight(text).saturating_sub(super::markdown::weight(&shown));
+            let label = if expanded { crate::t!("doc-show-less") } else { crate::t!("doc-show-all", n = hidden) };
+            if ui.link(RichText::new(label).small()).clicked() {
+                ui.ctx().data_mut(|d| d.insert_temp(id, !expanded));
+            }
+        }
+    });
+}
+
+/// The first display lines of `text` (cut at a line or word boundary), for folded documentation.
+pub fn fold(text: &str, max_weight: usize) -> String {
+    let mut out = String::new();
+    let mut w = 0;
+    for l in text.lines() {
+        let lw = 1 + l.chars().count() / 70;
+        if w + lw > max_weight {
+            let room = (max_weight.saturating_sub(w)) * 70;
+            if room > 0 {
+                let cut: String = l.chars().take(room).collect();
+                let cut = cut.rsplit_once(' ').map(|(a, _)| a.to_string()).unwrap_or(cut);
+                out.push_str(&cut);
+            }
+            out.push_str(" …");
+            return out;
+        }
+        out.push_str(l);
+        out.push('\n');
+        w += lw;
+    }
+    out
+}
+
 /// A row whose value is a link (clickable, accent coloured).
 pub fn kv_link(ui: &mut Ui, key: &str, value: &str) -> bool {
     let key = crate::i18n::kv_label(key);

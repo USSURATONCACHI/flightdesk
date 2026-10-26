@@ -19,3 +19,4 @@ pub mod theme;
 pub mod util;
 pub mod viewport;
 pub mod widgets;
+pub mod xmltext;

@@ -2,20 +2,25 @@ pub mod batches;
 pub mod connect;
 pub mod definition;
 pub mod definitions;
+pub mod diff;
 pub mod file;
 pub mod incidents;
 pub mod instance;
 pub mod search;
 pub mod settings;
+pub mod source;
+pub mod xml;
 
 pub use batches::BatchesPlace;
 pub use definition::DefinitionPlace;
 pub use definitions::DefinitionsPlace;
+pub use diff::DiffPlace;
 pub use file::FilePlace;
 pub use incidents::IncidentsPlace;
 pub use instance::InstancePlace;
 pub use search::SearchPlace;
 pub use settings::SettingsPlace;
+pub use xml::XmlPlace;
 
 use crate::app::App;
 use crate::widgets::split::{child_in, split, Side};

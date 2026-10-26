@@ -6,6 +6,9 @@ use crate::viewport::{self, DiagramView, Overlays};
 use bpmn::Model;
 use std::sync::Arc;
 
+/// Dock tab names (also the MCP identifiers).
+pub const DOCK_TABS: [&str; 2] = ["Inspector", "Matches"];
+
 pub struct FilePlace {
     pub path: std::path::PathBuf,
     pub model: Option<Arc<Model>>,
@@ -41,7 +44,7 @@ impl FilePlace {
             return;
         };
         let mut actions = vec![];
-        let (main_rect, _) = super::dock(ui, app, "file-dock", &["Inspector", "Matches"], &mut self.dock_tab, |ui, tab, _app| match tab {
+        let (main_rect, _) = super::dock(ui, app, "file-dock", &DOCK_TABS, &mut self.dock_tab, |ui, tab, _app| match tab {
             0 => match self.view.selection.or(self.view.hover) {
                 Some(r) => actions = inspector::show(ui, &model, r, &RuntimeFacts::default(), false),
                 None => {
@@ -50,6 +53,24 @@ impl FilePlace {
                     ui.label(egui::RichText::new(format!("{} flow nodes · {} flows · {} warnings", model.flow_nodes().count(), model.flows.len(), model.warnings.len())).weak());
                     for w in model.warnings.iter().take(20) {
                         ui.label(egui::RichText::new(w).small().weak());
+                    }
+                    ui.add_space(8.0);
+                    for p in &model.processes {
+                        crate::widgets::section(ui, ("file-process", &p.id), "Process", true, |ui| {
+                            crate::widgets::kv_mono(ui, "id", &p.id);
+                            if let Some(n) = &p.name {
+                                crate::widgets::kv(ui, "name", n);
+                            }
+                            crate::widgets::kv(ui, "executable", &if p.is_executable { crate::t!("common-yes") } else { crate::t!("common-no") });
+                            for (k, v) in &p.attrs {
+                                if let Some(c) = k.strip_prefix("camunda:") {
+                                    crate::widgets::kv(ui, c, v);
+                                }
+                            }
+                            if let Some(d) = &p.documentation {
+                                crate::widgets::doc_block(ui, ("process-doc", &p.id), "documentation", d);
+                            }
+                        });
                     }
                 }
             },
@@ -78,8 +99,9 @@ impl FilePlace {
             let style = app.tokens.diagram_style();
             let settings = app.diagram_settings();
             let model2 = model.clone();
+            let xml_editor = !app.settings.xml_editor.trim().is_empty();
             let out = viewport::Diagram { model: &model, style: &style, settings: &settings }.show(ui, &mut self.view, &mut self.overlays, &|_, _| {}, &mut |ui, target| {
-                crate::app::diagram_context_menu(ui, &model2, target, &mut actions);
+                crate::app::diagram_context_menu(ui, &model2, target, xml_editor, &mut actions);
             });
             app.last_diagram_viewport = out.viewport;
             if out.copied {
@@ -89,10 +111,20 @@ impl FilePlace {
                 self.dock_tab = 1;
             }
         });
+        let source = crate::places::source::DocSource::File(self.path.clone());
         for a in actions {
-            if let InspectorAction::Select(r) = a {
-                self.view.select(Some(r));
-                self.view.fit_refs(&model, std::iter::once(r));
+            match a {
+                InspectorAction::Select(r) => {
+                    self.view.select(Some(r));
+                    self.view.fit_refs(&model, std::iter::once(r));
+                }
+                InspectorAction::FitDiagram => self.view.fit_all(),
+                InspectorAction::ViewXml(_) | InspectorAction::XmlExternal(..) => {
+                    crate::places::xml::handle_action(app, crate::places::xml::XmlDoc::Single(source.clone()), &[(source.clone(), model.clone())], &a);
+                }
+                InspectorAction::OpenDefinitionKey(_) | InspectorAction::InstancesAt(_) | InspectorAction::ExecutedAt(_) | InspectorAction::IncidentsAt(_) => {
+                    app.toasts.push(crate::widgets::ToastKind::Info, crate::t!("file-needs-engine"));
+                }
             }
         }
         app.status_hint = crate::t!("hint-file");

@@ -31,6 +31,9 @@ pub enum Cmd {
     ZoomIn,
     ZoomOut,
     FocusFilter,
+    ViewXml,
+    OpenFile,
+    Compare,
 }
 
 pub struct CmdInfo {
@@ -56,7 +59,7 @@ const fn sc(m: Modifiers, k: Key) -> Option<KeyboardShortcut> {
 }
 
 impl Cmd {
-    pub const ALL: [Cmd; 25] = [
+    pub const ALL: [Cmd; 28] = [
         Cmd::Palette,
         Cmd::SearchInstances,
         Cmd::FindInDiagram,
@@ -80,6 +83,9 @@ impl Cmd {
         Cmd::CopyCockpitLink,
         Cmd::CopyPlaceId,
         Cmd::FocusFilter,
+        Cmd::ViewXml,
+        Cmd::OpenFile,
+        Cmd::Compare,
         Cmd::Help,
         Cmd::Disconnect,
     ];
@@ -111,6 +117,9 @@ impl Cmd {
             Cmd::FocusFilter => CmdInfo { name_key: "cmd-focus-filter", shortcut: None, keys_label: "/", category_key: "cat-general" },
             Cmd::Help => CmdInfo { name_key: "cmd-help", shortcut: sc(Modifiers::NONE, Key::F1), keys_label: "F1 / ?", category_key: "cat-general" },
             Cmd::Disconnect => CmdInfo { name_key: "cmd-disconnect", shortcut: None, keys_label: "", category_key: "cat-general" },
+            Cmd::ViewXml => CmdInfo { name_key: "cmd-view-xml", shortcut: sc(Modifiers::COMMAND, Key::U), keys_label: "Ctrl+U", category_key: "cat-diagram" },
+            Cmd::OpenFile => CmdInfo { name_key: "cmd-open-file", shortcut: sc(Modifiers::COMMAND, Key::O), keys_label: "Ctrl+O", category_key: "cat-general" },
+            Cmd::Compare => CmdInfo { name_key: "cmd-compare", shortcut: sc(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::M), keys_label: "Ctrl+Shift+M", category_key: "cat-diagram" },
         }
     }
 
@@ -121,7 +130,9 @@ impl Cmd {
             Cmd::Back => tab.map(|t| t.can_back()).unwrap_or(false),
             Cmd::Forward => tab.map(|t| t.can_forward()).unwrap_or(false),
             Cmd::NextTab | Cmd::PrevTab => app.tabs.len() > 1,
-            Cmd::FindInDiagram | Cmd::FitDiagram | Cmd::ZoomIn | Cmd::ZoomOut => tab.map(|t| t.place().has_diagram()).unwrap_or(false),
+            Cmd::FitDiagram | Cmd::ZoomIn | Cmd::ZoomOut => tab.map(|t| t.place().has_diagram()).unwrap_or(false),
+            Cmd::FindInDiagram => tab.map(|t| t.place().has_diagram() || matches!(t.place(), crate::state::Place::Xml(_))).unwrap_or(false),
+            Cmd::ViewXml => tab.map(|t| t.place().has_diagram()).unwrap_or(false),
             Cmd::CopyCockpitLink | Cmd::CopyPlaceId => tab.map(|t| matches!(t.place(), crate::state::Place::Definition(_) | crate::state::Place::Instance(_))).unwrap_or(false),
             Cmd::Disconnect | Cmd::SearchInstances | Cmd::GoDefinitions | Cmd::GoIncidents | Cmd::GoBatches => app.net.is_some(),
             _ => true,
@@ -175,6 +186,9 @@ impl Cmd {
             Cmd::FocusFilter => app.place_request = Some(PlaceRequest::FocusFilter),
             Cmd::Help => app.help_open = !app.help_open,
             Cmd::Disconnect => app.disconnect(),
+            Cmd::ViewXml => app.place_request = Some(PlaceRequest::ViewXml),
+            Cmd::OpenFile => app.pick_and_open_file(),
+            Cmd::Compare => app.open_compare(),
         }
     }
 }
@@ -186,6 +200,10 @@ pub enum PlaceRequest {
     FitDiagram,
     Zoom(f32),
     FocusFilter,
+    /// Open the XML view of the diagram, at the selected element.
+    ViewXml,
+    /// Select an element or flow by id and bring it into view.
+    Reveal(String),
 }
 
 /// Consume global shortcuts. Single-letter ones only when no text field is focused.

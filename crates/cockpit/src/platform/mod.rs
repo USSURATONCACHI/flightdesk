@@ -5,6 +5,7 @@
 //! protocol, spoken directly to the compositor on the window's own connection (KWin ≥ 6.4).
 //! Where neither is available the feature reports itself as unsupported and stays off.
 
+pub mod files;
 #[cfg(target_os = "linux")]
 pub mod wayland;
 #[cfg(target_os = "linux")]

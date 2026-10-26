@@ -678,21 +678,7 @@ impl<'a> Parser<'a> {
         }
         m.bounds = if bounds.is_valid() { bounds } else { Rect::new(0.0, 0.0, 0.0, 0.0) };
 
-        // Draw order: by depth, containers first within the same depth, boundary events last.
-        let mut order: Vec<ElementIdx> = (0..m.elements.len()).filter(|&i| m.elements[i].bounds.is_valid()).collect();
-        order.sort_by_key(|&i| {
-            let e = &m.elements[i];
-            let k = match e.kind {
-                ElementKind::Participant => 0,
-                ElementKind::Lane => 1,
-                ElementKind::Group => 2,
-                _ if e.kind.is_container() => 3,
-                ElementKind::BoundaryEvent => 9,
-                _ => 5,
-            };
-            (e.depth, k)
-        });
-        m.draw_order = order;
+        m.draw_order = draw_order(m);
 
         // Reading order for flow nodes (what Tab cycles through): a topological order of the
         // sequence-flow graph with geometric tie-breaking, so every branch of a gateway is visited
@@ -712,8 +698,27 @@ fn parse_bounds(b: &Node) -> Option<Rect> {
     })
 }
 
+/// Element indices sorted for drawing: by depth, containers first within the same depth,
+/// boundary events last. Elements without a diagram shape are left out.
+pub(crate) fn draw_order(m: &Model) -> Vec<ElementIdx> {
+    let mut order: Vec<ElementIdx> = (0..m.elements.len()).filter(|&i| m.elements[i].bounds.is_valid()).collect();
+    order.sort_by_key(|&i| {
+        let e = &m.elements[i];
+        let k = match e.kind {
+            ElementKind::Participant => 0,
+            ElementKind::Lane => 1,
+            ElementKind::Group => 2,
+            _ if e.kind.is_container() => 3,
+            ElementKind::BoundaryEvent => 9,
+            _ => 5,
+        };
+        (e.depth, k)
+    });
+    order
+}
+
 /// See `Model::reading_order`.
-fn reading_order(m: &Model) -> Vec<ElementIdx> {
+pub(crate) fn reading_order(m: &Model) -> Vec<ElementIdx> {
     use std::collections::{HashMap, HashSet};
     let drawable: Vec<ElementIdx> = m.flow_nodes().filter(|(_, e)| e.bounds.is_valid()).map(|(i, _)| i).collect();
     let set: HashSet<ElementIdx> = drawable.iter().copied().collect();

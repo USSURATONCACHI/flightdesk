@@ -31,6 +31,7 @@ raw-window-handle = "0.6"
 fluent-bundle = "0.16"
 unic-langid = "0.9"
 sys-locale = "0.3"
+rfd = "0.17"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
@@ -38,9 +39,10 @@ wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 x11rb = { version = "0.13", default-features = false }
 winit = { version = "0.30", default-features = false, features = ["x11"] }
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "open_uri"] }
 
 [dev-dependencies]
 egui_kittest.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_UI_Shell", "Win32_Foundation"] }

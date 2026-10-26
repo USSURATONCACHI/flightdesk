@@ -136,7 +136,7 @@ connect-remember-tip = Stored (owner-readable only) in the settings file
 connect-connecting = Connecting…
 connect-url-note = The URL is normalised: `host:8080`, `…/camunda/app/cockpit/…` and `…/engine-rest` all work.
 connect-open-bpmn = Open a .bpmn file
-connect-open-bpmn-tip = Offline viewer: no engine needed (path from $FLIGHTDECK_BPMN)
+connect-open-bpmn-tip = Offline viewer: no engine needed (Ctrl+O; you can also drop files onto the window)
 common-delete = Delete
 common-suspend = Suspend
 common-activate = Activate
@@ -911,3 +911,97 @@ kv-form-key = form key
 kv-form-ref = form ref
 kv-form-binding = form binding
 kv-form-version = form version
+
+## Documentation blocks
+doc-show-all = Show all ({ $n } more lines)
+doc-show-less = Show less
+kv-executable = executable
+section-process = Process
+
+## Opening files, document sources
+cmd-open-file = Open BPMN file…
+cmd-view-xml = View XML
+cmd-compare = Compare BPMN…
+open-file-title = Open a BPMN file
+file-needs-engine = Needs a connected engine
+source-offline = Not connected to an engine
+source-no-data-dir = No data directory to export the definition to
+settings-xml-editor = External XML editor
+settings-xml-editor-hint = Command for “Open XML in editor”, e.g. code -g {"{"}file{"}"}:{"{"}line{"}"}:{"{"}col{"}"} or kate -l {"{"}line{"}"} -c {"{"}col{"}"} {"{"}file{"}"}. Empty hides the item.
+
+## XML view
+ctx-view-xml = View XML
+ctx-open-xml-with = Open XML with…
+ctx-open-xml-editor = Open XML in editor
+ctx-copy-location = Copy path:line:col
+ctx-copy-location-tip = The file and position of this element, as editors such as VS Code accept it (code -g path:line:col). Engine definitions are saved to the data directory first.
+xml-find = Find
+xml-find-hint = Find in XML  (Enter next, Shift+Enter previous)
+xml-fold = { $n ->
+    [one] { $n } unchanged line
+   *[other] { $n } unchanged lines
+}
+xml-identical = identical
+xml-whole-file = Whole file
+xml-whole-file-tip = Show unchanged lines instead of folding them
+xml-prev-change-tip = Previous change (Shift+N)
+xml-next-change-tip = Next change (N)
+xml-clear-highlight-tip = Remove the highlight (Esc)
+xml-show-diagram = Show diagram
+xml-show-diagram-tip = Switch to the diagram and select the highlighted element
+xml-open-with = Open with…
+xml-open-with-tip = Choose a program in the system's application chooser
+xml-open-editor = Open in editor
+xml-load-failed = Cannot load the document: { $error }
+xml-export-failed = Cannot save the XML to disk
+xml-editor-failed = Cannot start the editor
+xml-open-with-failed = The application chooser failed
+xml-not-loaded = The document is not loaded yet
+xml-ctx-show-in-diagram = Show in diagram
+xml-ctx-highlight-element = Highlight this element
+xml-ctx-copy-line = Copy line
+hint-xml = Ctrl+F find · F3 next match · Esc remove highlight · right-click a line: show in diagram, copy path:line:col
+hint-xml-diff = N / Shift+N next / previous change · Ctrl+F find · Esc remove highlight · click ⋯ to unfold
+
+## Diff view
+diff-before = Before
+diff-after = After
+diff-choose = choose…
+diff-swap-tip = Swap before and after
+diff-mode-unified = Unified
+diff-mode-before = Before
+diff-mode-after = After
+diff-mode-side-by-side = Side by side
+diff-added = +{ $n } added
+diff-removed = −{ $n } removed
+diff-changed = ~{ $n } changed
+diff-moved = ↔{ $n } moved
+diff-filter-tip = Show or hide this kind of change
+diff-no-changes = No differences
+diff-all-filtered = Every change is hidden by the filter
+diff-dim-unchanged = Dim unchanged
+diff-xml = XML diff
+diff-next-tip = Next change (N)
+diff-prev-tip = Previous change (Shift+N)
+diff-pick-file = Local file…
+diff-pick-file-title = Choose a BPMN file to compare
+diff-path-hint = or type a path
+diff-use-path = Use
+diff-no-such-file = No such file
+diff-recent = Open and recent documents
+diff-engine-definitions = Engine definitions
+diff-filter-hint = filter by key or name
+diff-setup-title = Compare two BPMN diagrams
+diff-setup-body = Pick the version before and after: local files or definitions deployed on the engine.
+diff-status-added = Added
+diff-status-removed = Removed
+diff-status-changed = Changed
+diff-status-moved = Moved (layout only)
+diff-also-moved = Also moved
+diff-only-layout = Only position or size changed.
+diff-id-changed = id was { $old }
+diff-more-changes = …and { $n } more
+section-document = Document
+section-changes = Changes
+dock-changes = Changes
+hint-diff = N / Shift+N next / previous change · click a change to go there · Ctrl+U XML diff · right-click: XML of an element

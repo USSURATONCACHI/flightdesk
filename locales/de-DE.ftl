@@ -135,7 +135,7 @@ connect-remember-tip = In der Einstellungsdatei gespeichert (nur für den Besitz
 connect-connecting = Verbinde…
 connect-url-note = Die URL wird normalisiert: `host:8080`, `…/camunda/app/cockpit/…` und `…/engine-rest` funktionieren alle.
 connect-open-bpmn = .bpmn-Datei öffnen
-connect-open-bpmn-tip = Offline-Ansicht: keine Engine nötig (Pfad aus $FLIGHTDECK_BPMN)
+connect-open-bpmn-tip = Offline-Ansicht: keine Engine nötig (Strg+O; Dateien lassen sich auch ins Fenster ziehen)
 common-delete = Löschen
 common-suspend = Anhalten
 common-activate = Aktivieren
@@ -910,3 +910,97 @@ kv-form-key = Formularschlüssel
 kv-form-ref = Formularreferenz
 kv-form-binding = Formularbindung
 kv-form-version = Formularversion
+
+## Documentation blocks
+doc-show-all = Alles zeigen ({ $n } weitere Zeilen)
+doc-show-less = Weniger zeigen
+kv-executable = ausführbar
+section-process = Prozess
+
+## Opening files, document sources
+cmd-open-file = BPMN-Datei öffnen…
+cmd-view-xml = XML anzeigen
+cmd-compare = BPMN vergleichen…
+open-file-title = BPMN-Datei öffnen
+file-needs-engine = Braucht eine verbundene Engine
+source-offline = Nicht mit einer Engine verbunden
+source-no-data-dir = Kein Datenverzeichnis zum Speichern der Definition
+settings-xml-editor = Externer XML-Editor
+settings-xml-editor-hint = Befehl für „XML im Editor öffnen“, z. B. code -g {"{"}file{"}"}:{"{"}line{"}"}:{"{"}col{"}"} oder kate -l {"{"}line{"}"} -c {"{"}col{"}"} {"{"}file{"}"}. Leer blendet den Eintrag aus.
+
+## XML view
+ctx-view-xml = XML anzeigen
+ctx-open-xml-with = XML öffnen mit…
+ctx-open-xml-editor = XML im Editor öffnen
+ctx-copy-location = Pfad:Zeile:Spalte kopieren
+ctx-copy-location-tip = Datei und Position dieses Elements in der Form, die Editoren wie VS Code verstehen (code -g pfad:zeile:spalte). Engine-Definitionen werden zuerst ins Datenverzeichnis gespeichert.
+xml-find = Suchen
+xml-find-hint = Im XML suchen  (Enter weiter, Umschalt+Enter zurück)
+xml-fold = { $n ->
+    [one] { $n } unveränderte Zeile
+   *[other] { $n } unveränderte Zeilen
+}
+xml-identical = identisch
+xml-whole-file = Ganze Datei
+xml-whole-file-tip = Unveränderte Zeilen zeigen statt sie einzuklappen
+xml-prev-change-tip = Vorherige Änderung (Umschalt+N)
+xml-next-change-tip = Nächste Änderung (N)
+xml-clear-highlight-tip = Hervorhebung entfernen (Esc)
+xml-show-diagram = Diagramm zeigen
+xml-show-diagram-tip = Zum Diagramm wechseln und das hervorgehobene Element auswählen
+xml-open-with = Öffnen mit…
+xml-open-with-tip = Ein Programm in der Anwendungsauswahl des Systems wählen
+xml-open-editor = Im Editor öffnen
+xml-load-failed = Dokument kann nicht geladen werden: { $error }
+xml-export-failed = XML kann nicht gespeichert werden
+xml-editor-failed = Editor kann nicht gestartet werden
+xml-open-with-failed = Die Anwendungsauswahl ist fehlgeschlagen
+xml-not-loaded = Das Dokument ist noch nicht geladen
+xml-ctx-show-in-diagram = Im Diagramm zeigen
+xml-ctx-highlight-element = Dieses Element hervorheben
+xml-ctx-copy-line = Zeile kopieren
+hint-xml = Strg+F suchen · F3 nächster Treffer · Esc Hervorhebung entfernen · Rechtsklick auf eine Zeile: im Diagramm zeigen, Pfad:Zeile:Spalte kopieren
+hint-xml-diff = N / Umschalt+N nächste / vorherige Änderung · Strg+F suchen · Esc Hervorhebung entfernen · Klick auf ⋯ klappt auf
+
+## Diff view
+diff-before = Vorher
+diff-after = Nachher
+diff-choose = wählen…
+diff-swap-tip = Vorher und Nachher tauschen
+diff-mode-unified = Zusammen
+diff-mode-before = Vorher
+diff-mode-after = Nachher
+diff-mode-side-by-side = Nebeneinander
+diff-added = +{ $n } hinzugefügt
+diff-removed = −{ $n } entfernt
+diff-changed = ~{ $n } geändert
+diff-moved = ↔{ $n } verschoben
+diff-filter-tip = Diese Art von Änderung zeigen oder ausblenden
+diff-no-changes = Keine Unterschiede
+diff-all-filtered = Alle Änderungen sind ausgefiltert
+diff-dim-unchanged = Unverändertes abblenden
+diff-xml = XML-Vergleich
+diff-next-tip = Nächste Änderung (N)
+diff-prev-tip = Vorherige Änderung (Umschalt+N)
+diff-pick-file = Lokale Datei…
+diff-pick-file-title = BPMN-Datei zum Vergleichen wählen
+diff-path-hint = oder Pfad eingeben
+diff-use-path = Übernehmen
+diff-no-such-file = Datei nicht gefunden
+diff-recent = Geöffnete und letzte Dokumente
+diff-engine-definitions = Definitionen der Engine
+diff-filter-hint = nach Schlüssel oder Name filtern
+diff-setup-title = Zwei BPMN-Diagramme vergleichen
+diff-setup-body = Version vorher und nachher wählen: lokale Dateien oder auf der Engine bereitgestellte Definitionen.
+diff-status-added = Hinzugefügt
+diff-status-removed = Entfernt
+diff-status-changed = Geändert
+diff-status-moved = Verschoben (nur Layout)
+diff-also-moved = Auch verschoben
+diff-only-layout = Nur Position oder Größe hat sich geändert.
+diff-id-changed = frühere id: { $old }
+diff-more-changes = …und { $n } weitere
+section-document = Dokument
+section-changes = Änderungen
+dock-changes = Änderungen
+hint-diff = N / Umschalt+N nächste / vorherige Änderung · Klick auf eine Änderung springt hin · Strg+U XML-Vergleich · Rechtsklick: XML eines Elements

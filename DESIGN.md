@@ -123,7 +123,10 @@ and DejaVu Sans Mono, loaded at start-up when found, with egui's built-in fonts 
 | **Search** `{query}` | Query bar + results table with configurable columns (incl. variable columns) | Row preview (variables of the focused row) |
 | **Incidents** | Global incident table | Trace |
 | **Batches** | Running/finished batches with progress | Failed jobs of selected batch |
-| **Settings** | Engines, refresh, input, theme, confirmations | — |
+| **Settings** | Engines, refresh, input, theme, confirmations, external XML editor | — |
+| **File** `{path}` | Offline diagram of a local `.bpmn` (Ctrl+O, drag and drop, `flightdeck file.bpmn`) | Inspector · Matches |
+| **XML** `{document}` | The document's source with line numbers and syntax colours, scrolled to and highlighting an element; or a git-style line diff of two documents | — |
+| **Diff** `{before, after}` | One diagram with every change marked (or before / after / side by side) | Changes · Inspector |
 
 Tabs behave like a browser: each tab has its own history (Alt+←/→, mouse back/forward),
 `Ctrl+T` new tab (Definitions), `Ctrl+W` close, `Ctrl+Tab`/`Ctrl+Shift+Tab` cycle,
@@ -583,8 +586,9 @@ Design rules:
 - **Two families.** Engine tools (`list_definitions`, `get_element`, `search_instances`,
   `get_instance`, `set_variable`, `modify_instance`, `batch`, …) answer structured JSON;
   UI tools (`ui_state`, `ui_navigate`, `ui_select`, `ui_fit`, `ui_find`, `ui_dock`,
-  `ui_filter`, `ui_key`, `ui_type`, `ui_command`, `ui_screenshot`, `ui_confirm`, …) read and
-  drive the interface. `ui_screenshot` returns a PNG as MCP image content so the agent can see
+  `ui_filter`, `ui_key`, `ui_type`, `ui_command`, `ui_screenshot`, `ui_confirm`, `ui_view_xml`,
+  `ui_xml`, `ui_compare`, `ui_diff`, …) read and drive the interface; `diff_bpmn` answers a
+  semantic diff of two documents without any UI. `ui_screenshot` returns a PNG as MCP image content so the agent can see
   what the user sees.
 - **Destructive tools require `confirm: true`** (delete, modification, restart, batch,
   complete task, resolve incident, suspend definition), mirroring the human confirmation
@@ -619,6 +623,46 @@ Design rules:
   none otherwise), and after a timeout the caller gets the reason (window covered, minimized).
 - *Native first, wasm later.* Native gets the smoothest input and no CORS games; the code
   stays wasm-compatible (no blocking I/O on the UI thread, `reqwest` with the wasm feature).
+
+## 17. XML view and diffs
+
+- **Every diagram knows its XML.** Right-click an element, a flow or the background: *View XML*
+  (`Ctrl+U`), *Open XML with…* (the system application chooser: the XDG OpenURI portal with
+  `ask`, `SHOpenWithDialog` on Windows; absent elsewhere), *Open XML in editor* (only when a
+  command is set in Settings, with `{file}` `{line}` `{col}` placeholders, e.g.
+  `code -g {file}:{line}:{col}`) and *Copy path:line:col*. Columns count characters, as editors
+  do. An engine definition has no file, so it is written once to
+  `<data dir>/definitions/<key>-v<version>-<id8>.bpmn` (no colons, so `path:line:col` stays
+  unambiguous).
+- **One XML tab per document.** *View XML* switches to the tab already showing that document
+  (`NavMode::Reuse`) and points it at the new element instead of opening another. The highlight
+  covers the element's exact byte range (start tag to end tag), is a chip in the toolbar and
+  goes away with ✕ or Esc. Right-click a line: show that element in the diagram (the innermost
+  element containing the line, or the `bpmnElement` of a DI shape), highlight it, copy the line
+  or its location.
+- **The viewer is virtualised** (only visible rows are laid out) and its highlighter is
+  line-oriented with the state carried across lines, so multi-line attribute values, comments
+  and CDATA are coloured correctly from any starting row. Very long lines are cut at 6000
+  characters for drawing.
+- **Diffs are semantic first.** `bpmn::diff` matches elements and flows by id, then by
+  (kind, unique name) for regenerated ids, then flows by their matched endpoints. Each item
+  gets a status — added, removed, changed (with every changed property: attributes,
+  documentation, event definitions, conditions, scripts, I/O parameters, listeners, fields,
+  properties, lane, parent…) or moved (layout only) — and process/file-level changes are listed
+  separately. The unified view draws the new diagram with the removed items merged in as dashed
+  red ghosts; added is green, changed amber with `~N` (number of properties), moved blue with a
+  dashed outline where it used to be; unchanged items are dimmed (toggle). Before / After / Side
+  by side (cameras and selection locked together) use the same marks. `N` / `Shift+N` (or F7)
+  step through the changes in list order.
+- **XML diffs are git diffs.** Patience line diff, two line-number columns and a `+`/`−` gutter,
+  word emphasis inside a changed line pair (none when most of the line changed — the line colour
+  already says it), unchanged runs folded to three lines of context (click to unfold; the element
+  being shown is always unfolded), *Whole file* to show everything.
+- **Documentation is Markdown-lite and last.** BPMN `documentation` (and a process definition's
+  description, which Camunda takes from it with line breaks intact) renders with kept line
+  breaks, headings, lists, quotes, code, emphasis and links; plain text renders as itself
+  (`SOME_ROLE_CODE` keeps its underscores). It is always the last field of a viewer and folds
+  when long, so it never pushes the short fields out of view.
 
 ## Localisation
 

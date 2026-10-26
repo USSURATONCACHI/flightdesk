@@ -30,7 +30,34 @@ pub struct DiagramStyle {
     pub current_match: Color32,
     pub external: Color32,
     pub badge_text: Color32,
+    pub diff_added: Color32,
+    pub diff_removed: Color32,
+    pub diff_changed: Color32,
+    pub diff_moved: Color32,
     pub dark: bool,
+}
+
+/// How an element or flow differs from the other document of a diff.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DiffMark {
+    Added,
+    Removed,
+    /// Semantic change; the number of changed properties.
+    Changed(usize),
+    /// Only the layout changed.
+    Moved,
+}
+
+impl DiffMark {
+    pub fn sign(self) -> String {
+        match self {
+            DiffMark::Added => "+".into(),
+            DiffMark::Removed => "−".into(),
+            DiffMark::Changed(n) if n > 1 => format!("~{n}"),
+            DiffMark::Changed(_) => "~".into(),
+            DiffMark::Moved => "↔".into(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,6 +99,12 @@ pub struct Overlays {
     pub suspended: bool,
     /// Elements to highlight softly (e.g. neighbours of the hovered element).
     pub related: HashSet<Ref>,
+    /// Diff views: how each element or flow differs from the other document.
+    pub diff: HashMap<Ref, DiffMark>,
+    /// Diff views: where moved elements used to be (faint dashed outlines).
+    pub diff_ghosts: Vec<bpmn::Rect>,
+    /// 0..1: how strongly a diff view dims what did not change.
+    pub dim_unchanged: f32,
 }
 
 /// A clickable badge drawn this frame (screen rect).
@@ -154,14 +187,28 @@ impl<'a> Renderer<'a> {
     }
 
     fn alpha_for(&self, r: Ref) -> f32 {
+        let mut alpha = 1.0;
         let dim = self.overlays.dim_unmatched;
-        if dim <= 0.0 {
-            return 1.0;
+        if dim > 0.0 {
+            let (a, b) = self.match_strength(r);
+            let matched = a.max(b);
+            // Fully dimmed = 0.22; a (partially) matched element is lifted back towards 1.
+            alpha = 1.0 - dim * (1.0 - matched) * 0.78;
         }
-        let (a, b) = self.match_strength(r);
-        let matched = a.max(b);
-        // Fully dimmed = 0.22; a (partially) matched element is lifted back towards 1.
-        1.0 - dim * (1.0 - matched) * 0.78
+        let du = self.overlays.dim_unchanged;
+        if du > 0.0 && !self.overlays.diff.contains_key(&r) {
+            alpha *= 1.0 - du * 0.6;
+        }
+        alpha
+    }
+
+    fn diff_color(&self, m: DiffMark) -> Color32 {
+        match m {
+            DiffMark::Added => self.style.diff_added,
+            DiffMark::Removed => self.style.diff_removed,
+            DiffMark::Changed(_) => self.style.diff_changed,
+            DiffMark::Moved => self.style.diff_moved,
+        }
     }
 
     fn element_colors(&self, idx: usize, e: &Element) -> (Color32, Color32, Color32) {
@@ -189,6 +236,16 @@ impl<'a> Renderer<'a> {
         }
         if self.overlays.suspended {
             stroke = blend(stroke, st.suspended, 0.5);
+        }
+        if let Some(&m) = self.overlays.diff.get(&Ref::Element(idx)) {
+            let c = self.diff_color(m);
+            stroke = c;
+            let k = match m {
+                DiffMark::Moved => 0.10,
+                _ if st.dark => 0.26,
+                _ => 0.16,
+            };
+            fill = blend(fill, c, k);
         }
         let text = st.text;
         (fill.gamma_multiply(a), stroke.gamma_multiply(a), text.gamma_multiply(a))
@@ -251,6 +308,84 @@ impl<'a> Renderer<'a> {
             if self.visible_world(&e.bounds) && e.kind.is_flow_node() {
                 self.paint_badges(i, e);
             }
+        }
+        if !self.overlays.diff.is_empty() {
+            self.paint_diff_marks();
+        }
+    }
+
+    /// Diff views: dashed outlines where moved elements used to be, and a +/−/~/↔ badge on
+    /// every element and flow that differs.
+    fn paint_diff_marks(&mut self) {
+        let m = self.model;
+        let ghost = Stroke::new(1.2, self.style.diff_moved.gamma_multiply(0.55));
+        for g in &self.overlays.diff_ghosts {
+            if self.visible_world(g) {
+                let r = self.wr(*g);
+                self.dashed_rect(r, 5.0, 4.0, ghost, 0.0);
+            }
+        }
+        if self.lod() == Lod::Blocks {
+            return;
+        }
+        for (&r, &mark) in &self.overlays.diff {
+            let (anchor, a) = match r {
+                Ref::Element(i) => {
+                    let e = &m.elements[i];
+                    if !self.visible_world(&e.bounds) {
+                        continue;
+                    }
+                    let b = self.wr(e.bounds);
+                    let p = if e.kind.is_swimlane() { b.min + Vec2::new(14.0, 12.0) } else if e.kind.is_event() || e.kind.is_gateway() { Pos2::new(b.min.x + b.width() * 0.15, b.min.y + b.height() * 0.15) } else { b.min };
+                    (p, self.alpha_for(r))
+                }
+                Ref::Flow(fi) => {
+                    let f = &m.flows[fi];
+                    if f.waypoints.len() < 2 || !self.visible_world(&f.bounds) {
+                        continue;
+                    }
+                    (self.ws(polyline_midpoint(&f.waypoints)), self.alpha_for(r))
+                }
+            };
+            self.badge(anchor, &mark.sign(), self.diff_color(mark), Align2::CENTER_CENTER, a);
+        }
+    }
+
+    /// Diff ring around an element: solid, or dashed for removed ones.
+    fn diff_ring(&self, e: &Element, r: Rect, color: Color32, dashed: bool) {
+        let w = 2.5;
+        let pad = 6.0;
+        let stroke = Stroke::new(w, color);
+        if e.kind.is_swimlane() {
+            self.painter.rect_stroke(r.shrink(w), 0.0, stroke, StrokeKind::Inside);
+            return;
+        }
+        if e.kind.is_event() {
+            let c = r.center();
+            let rad = r.width() / 2.0 + pad;
+            if dashed {
+                let pts: Vec<Pos2> = (0..=64).map(|i| c + Vec2::angled(std::f32::consts::TAU * i as f32 / 64.0) * rad).collect();
+                self.painter.add(Shape::dashed_line(&pts, stroke, 6.0, 4.0));
+            } else {
+                self.painter.circle_stroke(c, rad, stroke);
+            }
+            return;
+        }
+        let rr = r.expand(pad);
+        if e.kind.is_gateway() {
+            let c = rr.center();
+            let pts = vec![Pos2::new(c.x, rr.min.y), Pos2::new(rr.max.x, c.y), Pos2::new(c.x, rr.max.y), Pos2::new(rr.min.x, c.y), Pos2::new(c.x, rr.min.y)];
+            if dashed {
+                self.painter.add(Shape::dashed_line(&pts, stroke, 6.0, 4.0));
+            } else {
+                self.painter.add(Shape::line(pts, PathStroke::from(stroke)));
+            }
+            return;
+        }
+        if dashed {
+            self.dashed_rect(rr, 6.0, 4.0, stroke, 0.0);
+        } else {
+            self.painter.rect_stroke(rr, self.px(10.0) + pad, stroke, StrokeKind::Middle);
         }
     }
 
@@ -548,12 +683,24 @@ impl<'a> Renderer<'a> {
             color = blend(color, target, t);
             width *= 1.0 + 0.5 * t;
         }
+        let mark = self.overlays.diff.get(&Ref::Flow(fi)).copied();
+        if let Some(m) = mark {
+            if !selected && !hovered {
+                color = self.diff_color(m);
+            }
+            width *= if m == DiffMark::Moved { 1.3 } else { 1.7 };
+        }
+        let removed = mark == Some(DiffMark::Removed);
         let color = color.gamma_multiply(a);
         let pts: Vec<Pos2> = f.waypoints.iter().map(|p| self.ws(*p)).collect();
         let stroke = Stroke::new(width, color);
         match f.kind {
             FlowKind::SequenceFlow => {
-                self.painter.add(Shape::line(pts.clone(), PathStroke::from(stroke)));
+                if removed {
+                    self.dashed_polyline(&pts, stroke, self.px(7.0), self.px(4.0));
+                } else {
+                    self.painter.add(Shape::line(pts.clone(), PathStroke::from(stroke)));
+                }
                 if lod <= Lod::Low {
                     self.arrow_head(&pts, color, true, width);
                     if f.is_default {
@@ -609,6 +756,9 @@ impl<'a> Renderer<'a> {
             ring = Some((st.hover, 2.0));
         } else if self.overlays.related.contains(&rref) {
             ring = Some((st.hover.gamma_multiply(0.6), 2.0));
+        }
+        if let Some(&m) = self.overlays.diff.get(&rref) {
+            self.diff_ring(e, r, self.diff_color(m).gamma_multiply(self.alpha_for(rref)), m == DiffMark::Removed);
         }
         let (ta, tb) = self.match_strength(rref);
         if ta > 0.0 || tb > 0.0 {

@@ -34,17 +34,32 @@ Community Edition REST API.
   retry / delete / set variable as Camunda batches.
 - **Incidents** and **Batches** places, a command palette (`Ctrl+K`), browser-like tabs with
   per-tab history (`Alt+←/→`, `Ctrl+T/W/Tab`), toasts with undo, a shortcut cheat-sheet (`?`).
-- **Offline viewer** – `flightdeck some.bpmn` opens a diagram without an engine.
+- **Offline viewer** – `flightdeck some.bpmn`, `Ctrl+O` or drag and drop opens a diagram without
+  an engine.
+- **XML view** – right-click any element or flow: *View XML* (`Ctrl+U`) opens the document's
+  source at that element with the element highlighted (✕ or Esc removes it); *Open XML with…*
+  (system application chooser), *Open XML in editor* (set a command such as
+  `code -g {file}:{line}:{col}` in Settings) and *Copy path:line:col*. Definitions from the
+  engine are saved to the data directory first so editors get a real file.
+- **Diffs** – `Ctrl+Shift+M` (or *Compare BPMN…* in the palette) compares two documents: local
+  files, any deployed version, or a mix; from a definition it starts with the previous version.
+  Added, removed (dashed ghosts), changed (`~N` properties) and moved elements *and flows* are
+  marked on the diagram; Before / After / Side by side; `N` / `Shift+N` step through changes; the
+  Changes dock lists every property change git-style. *XML diff* opens a folded, git-style
+  diff of the two files. `flightdeck --diff before.bpmn after.bpmn` opens one directly.
+- **Documentation** – element and process documentation renders as light Markdown (line breaks,
+  headings, lists, `code`, **bold**, links) and is always the last field.
 
 ## AI agents (MCP)
 
 Flightdeck has a built-in [MCP](https://modelcontextprotocol.io) server. Toggle it with the
 `MCP` pill in the top bar, in *Settings → MCP server*, or start with `flightdeck --mcp`
-(default port 7788, optional bearer token). It exposes 56 tools: engine tools
+(default port 7788, optional bearer token). It exposes 61 tools: engine tools
 (`list_definitions`, `get_element`, `find_elements`, `search_instances`, `get_instance`,
 `get_variables`, `set_variable`, `retry_job`, `modify_instance`, `batch`, …) and UI tools
 (`ui_state`, `ui_navigate`, `ui_select`, `ui_fit`, `ui_find`, `ui_dock`, `ui_filter`,
-`ui_key`, `ui_type`, `ui_command`, `ui_screenshot`, `ui_confirm`, …). Destructive tools need
+`ui_key`, `ui_type`, `ui_command`, `ui_screenshot`, `ui_confirm`, `ui_view_xml`, `ui_compare`,
+`ui_diff`, …) plus `diff_bpmn` (semantic diff as JSON). Destructive tools need
 `confirm: true`.
 
 ```sh
@@ -186,6 +201,9 @@ Alt into a precision mode). Effective zoom speed = global × device, × Alt whil
 | Tab / Shift+Tab, Alt+→ / Alt+← | next element along the flow · follow outgoing/incoming flow |
 | Enter | inspect, drill into a call activity / called instance |
 | Ctrl+F · Ctrl+K · Ctrl+Shift+F | find element · command palette · instance search |
+| Ctrl+U · Ctrl+O · Ctrl+Shift+M | view XML of the selection · open a BPMN file · compare BPMN |
+| N / Shift+N (F7 / Shift+F7) | next / previous change in a diff or XML diff |
+| F3 / Shift+F3 | next / previous match in the XML view |
 | Ctrl+1…9 · Ctrl+B | dock tab · toggle dock |
 | Ctrl+T · Ctrl+W · Ctrl+Tab · Alt+←/→ | tabs and history |
 | R / F5 · Ctrl+Shift+P · Ctrl+Shift+T | refresh · pause auto-refresh · cycle theme (system / light / dark) |

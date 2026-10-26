@@ -137,7 +137,7 @@ connect-remember-tip = Хранится в файле настроек (чита
 connect-connecting = Подключение…
 connect-url-note = URL нормализуется: подойдут `host:8080`, `…/camunda/app/cockpit/…` и `…/engine-rest`.
 connect-open-bpmn = Открыть файл .bpmn
-connect-open-bpmn-tip = Автономный просмотр: движок не нужен (путь из $FLIGHTDECK_BPMN)
+connect-open-bpmn-tip = Автономный просмотр: движок не нужен (Ctrl+O; файлы можно и перетащить в окно)
 common-delete = Удалить
 common-suspend = Приостановить
 common-activate = Активировать
@@ -925,3 +925,102 @@ kv-form-key = ключ формы
 kv-form-ref = ссылка на форму
 kv-form-binding = привязка формы
 kv-form-version = версия формы
+
+## Documentation blocks
+doc-show-all = Показать всё (ещё { $n ->
+    [one] { $n } строка
+    [few] { $n } строки
+   *[many] { $n } строк
+})
+doc-show-less = Свернуть
+kv-executable = исполняемый
+section-process = Процесс
+
+## Opening files, document sources
+cmd-open-file = Открыть файл BPMN…
+cmd-view-xml = Показать XML
+cmd-compare = Сравнить BPMN…
+open-file-title = Открыть файл BPMN
+file-needs-engine = Нужно подключение к движку
+source-offline = Нет подключения к движку
+source-no-data-dir = Нет каталога данных, куда сохранить определение
+settings-xml-editor = Внешний редактор XML
+settings-xml-editor-hint = Команда для «Открыть XML в редакторе», например code -g {"{"}file{"}"}:{"{"}line{"}"}:{"{"}col{"}"} или kate -l {"{"}line{"}"} -c {"{"}col{"}"} {"{"}file{"}"}. Пусто — пункт скрыт.
+
+## XML view
+ctx-view-xml = Показать XML
+ctx-open-xml-with = Открыть XML с помощью…
+ctx-open-xml-editor = Открыть XML в редакторе
+ctx-copy-location = Копировать путь:строка:столбец
+ctx-copy-location-tip = Файл и позиция элемента в виде, который понимают редакторы, например VS Code (code -g путь:строка:столбец). Определения с движка сначала сохраняются в каталог данных.
+xml-find = Найти
+xml-find-hint = Поиск в XML  (Enter — далее, Shift+Enter — назад)
+xml-fold = { $n ->
+    [one] { $n } строка без изменений
+    [few] { $n } строки без изменений
+   *[many] { $n } строк без изменений
+}
+xml-identical = идентичны
+xml-whole-file = Весь файл
+xml-whole-file-tip = Показывать неизменённые строки, а не сворачивать их
+xml-prev-change-tip = Предыдущее изменение (Shift+N)
+xml-next-change-tip = Следующее изменение (N)
+xml-clear-highlight-tip = Убрать подсветку (Esc)
+xml-show-diagram = Показать диаграмму
+xml-show-diagram-tip = Перейти к диаграмме и выделить подсвеченный элемент
+xml-open-with = Открыть с помощью…
+xml-open-with-tip = Выбрать программу в системном диалоге выбора приложения
+xml-open-editor = Открыть в редакторе
+xml-load-failed = Не удалось загрузить документ: { $error }
+xml-export-failed = Не удалось сохранить XML на диск
+xml-editor-failed = Не удалось запустить редактор
+xml-open-with-failed = Ошибка системного выбора приложения
+xml-not-loaded = Документ ещё не загружен
+xml-ctx-show-in-diagram = Показать на диаграмме
+xml-ctx-highlight-element = Подсветить этот элемент
+xml-ctx-copy-line = Копировать строку
+hint-xml = Ctrl+F поиск · F3 следующее совпадение · Esc убрать подсветку · правый клик по строке: показать на диаграмме, копировать путь:строка:столбец
+hint-xml-diff = N / Shift+N следующее / предыдущее изменение · Ctrl+F поиск · Esc убрать подсветку · клик по ⋯ разворачивает
+
+## Diff view
+diff-before = До
+diff-after = После
+diff-choose = выбрать…
+diff-swap-tip = Поменять местами «до» и «после»
+diff-mode-unified = Вместе
+diff-mode-before = До
+diff-mode-after = После
+diff-mode-side-by-side = Рядом
+diff-added = +{ $n } добавлено
+diff-removed = −{ $n } удалено
+diff-changed = ~{ $n } изменено
+diff-moved = ↔{ $n } перемещено
+diff-filter-tip = Показать или скрыть такие изменения
+diff-no-changes = Различий нет
+diff-all-filtered = Все изменения скрыты фильтром
+diff-dim-unchanged = Приглушить неизменённое
+diff-xml = Разница XML
+diff-next-tip = Следующее изменение (N)
+diff-prev-tip = Предыдущее изменение (Shift+N)
+diff-pick-file = Локальный файл…
+diff-pick-file-title = Выберите файл BPMN для сравнения
+diff-path-hint = или введите путь
+diff-use-path = Выбрать
+diff-no-such-file = Файл не найден
+diff-recent = Открытые и недавние документы
+diff-engine-definitions = Определения на движке
+diff-filter-hint = фильтр по ключу или имени
+diff-setup-title = Сравнение двух диаграмм BPMN
+diff-setup-body = Выберите версию «до» и «после»: локальные файлы или определения, развёрнутые на движке.
+diff-status-added = Добавлено
+diff-status-removed = Удалено
+diff-status-changed = Изменено
+diff-status-moved = Перемещено (только расположение)
+diff-also-moved = Также перемещено
+diff-only-layout = Изменились только положение или размер.
+diff-id-changed = прежний id: { $old }
+diff-more-changes = …и ещё { $n }
+section-document = Документ
+section-changes = Изменения
+dock-changes = Изменения
+hint-diff = N / Shift+N следующее / предыдущее изменение · клик по изменению — перейти · Ctrl+U разница XML · правый клик: XML элемента

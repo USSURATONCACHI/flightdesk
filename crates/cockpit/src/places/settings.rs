@@ -197,6 +197,10 @@ impl SettingsPlace {
                         });
                     });
                 });
+                section(ui, "s-xml", &t!("settings-xml-editor"), true, |ui| {
+                    dirty |= ui.add(egui::TextEdit::singleline(&mut app.settings.xml_editor).hint_text("code -g {file}:{line}:{col}").desired_width(f32::INFINITY).font(egui::TextStyle::Monospace)).changed();
+                    ui.label(RichText::new(t!("settings-xml-editor-hint")).weak().small());
+                });
                 section(ui, "s-refresh", &t!("settings-refresh"), true, |ui| {
                     egui::Grid::new("refresh-grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                         ui.label(t!("settings-refresh-instances"));

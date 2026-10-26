@@ -12,6 +12,10 @@ struct Args {
     password: Option<String>,
     open: Vec<String>,
     bpmn: Option<PathBuf>,
+    /// `--diff BEFORE AFTER`: two files (or `def:<definition id>` once connected).
+    diff: Option<(String, String)>,
+    /// `--xml FILE[#element]`: the XML view of a file, at an element.
+    xml: Option<String>,
     screenshot: Option<PathBuf>,
     screenshot_after: u64,
     exit_after_screenshot: bool,
@@ -41,6 +45,8 @@ fn parse_args() -> Args {
             "--password" => a.password = it.next(),
             "--open" => a.open.extend(it.next()),
             "--bpmn" => a.bpmn = it.next().map(PathBuf::from),
+            "--diff" => a.diff = it.next().zip(it.next()),
+            "--xml" => a.xml = it.next(),
             "--screenshot" => a.screenshot = it.next().map(PathBuf::from),
             "--screenshot-after" => a.screenshot_after = it.next().and_then(|v| v.parse().ok()).unwrap_or(12),
             "--exit-after-screenshot" => a.exit_after_screenshot = true,
@@ -64,7 +70,7 @@ fn parse_args() -> Args {
                 })
             }
             "-h" | "--help" => {
-                println!("flightdeck [--config-dir DIR --data-dir DIR] [--locale-dir DIR[:DIR…]] [--mcp] [--mcp-port N] [--mcp-host ADDR] [--mcp-stdio URL] [--no-focus] [--on-top] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
+                println!("flightdeck [--config-dir DIR --data-dir DIR] [--locale-dir DIR[:DIR…]] [--mcp] [--mcp-port N] [--mcp-host ADDR] [--mcp-stdio URL] [--no-focus] [--on-top] [--url URL] [--user U --password P] [--open definitions|def:<key>|instance:<id>|search:<query>] [--bpmn FILE] [--diff BEFORE AFTER] [--xml FILE[#element-id]] [--theme light|dark] [--scale F] [--size WxH] [--screenshot out.png [--screenshot-after N] [--exit-after-screenshot]]");
                 std::process::exit(0);
             }
             other => {
@@ -214,6 +220,7 @@ fn main() -> eframe::Result<()> {
             cockpit::platform::init(cc, cc);
             let mut app = app::App::new(&cc.egui_ctx, settings, args.scale);
             app.settings_path = Some(dirs.settings_file());
+            app.data_dir = Some(dirs.data.clone());
             app.locale_dirs = locale_dirs.clone();
             app.apply_language();
             if theme_override.is_some() {
@@ -228,6 +235,22 @@ fn main() -> eframe::Result<()> {
                 app.offline = true;
                 app.navigate(state::Nav::File { path: b.clone() }, state::NavMode::NewTab);
             }
+            let doc = |s: &str| match s.strip_prefix("def:") {
+                Some(id) => cockpit::places::source::DocSource::Definition(id.to_string()),
+                None => cockpit::places::source::DocSource::File(paths::expand_tilde(s)),
+            };
+            if let Some((l, r)) = &args.diff {
+                app.offline = true;
+                app.navigate(state::Nav::Diff { left: Some(doc(l)), right: Some(doc(r)) }, state::NavMode::NewTab);
+            }
+            if let Some(x) = &args.xml {
+                let (file, element) = match x.split_once('#') {
+                    Some((f, e)) => (f, Some(e.to_string())),
+                    None => (x.as_str(), None),
+                };
+                app.offline = true;
+                app.navigate(state::Nav::Xml { doc: cockpit::places::xml::XmlDoc::Single(doc(file)), element }, state::NavMode::NewTab);
+            }
             if let Some(url) = &args.url {
                 let normalized = camunda::normalize_base_url(url);
                 let host = normalized.trim_start_matches("http://").trim_start_matches("https://").split('/').next().unwrap_or("engine").to_string();
@@ -237,7 +260,7 @@ fn main() -> eframe::Result<()> {
                 }
                 app.connect.connecting = true;
                 app.connect_to(p);
-            } else if app.settings.auto_connect && args.bpmn.is_none() {
+            } else if app.settings.auto_connect && args.bpmn.is_none() && args.diff.is_none() && args.xml.is_none() {
                 let p = app.settings.engine();
                 app.connect.connecting = true;
                 app.connect_to(p);

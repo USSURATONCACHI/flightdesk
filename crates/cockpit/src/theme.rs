@@ -100,6 +100,10 @@ impl Tokens {
             current_match: if self.dark { Color32::from_rgb(0xFF, 0xA5, 0x2B) } else { Color32::from_rgb(0xE8, 0x8A, 0x00) },
             external: self.external,
             badge_text: Color32::WHITE,
+            diff_added: self.completed,
+            diff_removed: self.incident,
+            diff_changed: self.suspended,
+            diff_moved: if self.dark { Color32::from_rgb(0x7D, 0xB4, 0xFF) } else { Color32::from_rgb(0x3B, 0x7D, 0xD8) },
             dark: self.dark,
         }
     }
@@ -193,7 +197,21 @@ pub fn install_fonts(ctx: &egui::Context) {
             list.insert(pos, "symbols".into());
         }
     }
+    // Bold for Markdown `**strong**`: a real bold face when one is installed, else the regular
+    // stack. The family always exists, so naming it can never fail.
+    let bold_candidates = ["/usr/share/fonts/noto/NotoSans-Bold.ttf", "/usr/share/fonts/TTF/NotoSans-Bold.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:\\Windows\\Fonts\\segoeuib.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"];
+    let mut bold = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    if let Some(bytes) = bold_candidates.iter().find_map(|p| std::fs::read(p).ok()) {
+        defs.font_data.insert("ui-bold".into(), Arc::new(FontData::from_owned(bytes)));
+        bold.insert(0, "ui-bold".into());
+    }
+    defs.families.insert(bold_family(), bold);
     ctx.set_fonts(defs);
+}
+
+/// The bold text family installed by `install_fonts`.
+pub fn bold_family() -> FontFamily {
+    FontFamily::Name("bold".into())
 }
 
 /// The desktop's light/dark preference, refreshed in the background.

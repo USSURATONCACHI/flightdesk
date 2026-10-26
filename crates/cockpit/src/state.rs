@@ -12,6 +12,8 @@ pub enum Place {
     Batches(BatchesPlace),
     Settings(SettingsPlace),
     File(Box<FilePlace>),
+    Xml(Box<XmlPlace>),
+    Diff(Box<DiffPlace>),
 }
 
 /// A navigation request; turned into a `Place` by the app.
@@ -26,6 +28,10 @@ pub enum Nav {
     Batches,
     Settings,
     File { path: std::path::PathBuf },
+    /// XML source of a document (or a line diff), optionally scrolled to an element.
+    Xml { doc: crate::places::xml::XmlDoc, element: Option<String> },
+    /// Visual diff; a missing side opens the picker for it.
+    Diff { left: Option<crate::places::source::DocSource>, right: Option<crate::places::source::DocSource> },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,6 +40,9 @@ pub enum NavMode {
     NewTab,
     /// Replace the current history entry (e.g. version switch).
     Replace,
+    /// Switch to a tab already showing the target (pointing it at the request's element),
+    /// otherwise open a new tab.
+    Reuse,
 }
 
 pub struct Tab {
@@ -92,9 +101,39 @@ impl Place {
             Place::Batches(_) => crate::t!("place-batches"),
             Place::Settings(_) => crate::t!("settings-title"),
             Place::File(p) => p.title(),
+            Place::Xml(p) => p.title(),
+            Place::Diff(p) => p.title(),
+        }
+    }
+    /// Whether this place shows what `nav` asks for (for `NavMode::Reuse`).
+    pub fn shows(&self, nav: &Nav) -> bool {
+        match (self, nav) {
+            (Place::Definition(p), Nav::Definition { id }) => p.def_id == *id,
+            (Place::Instance(p), Nav::Instance { id }) => p.id == *id,
+            (Place::File(p), Nav::File { path }) => p.path == *path,
+            (Place::Xml(p), Nav::Xml { doc, .. }) => p.doc == *doc,
+            (Place::Diff(p), Nav::Diff { left, right }) => p.same_sources(left, right),
+            (Place::Settings(_), Nav::Settings) | (Place::Incidents(_), Nav::Incidents) | (Place::Batches(_), Nav::Batches) => true,
+            _ => false,
+        }
+    }
+    /// Point a reused place at the specifics of `nav` (the element an XML view should show).
+    pub fn retarget(&mut self, nav: Nav) {
+        if let (Place::Xml(p), Nav::Xml { element, .. }) = (self, nav) {
+            p.retarget(element);
+        }
+    }
+    /// The diagram view of places that draw one (the active one for a diff).
+    pub fn diagram_view_mut(&mut self) -> Option<&mut crate::viewport::DiagramView> {
+        match self {
+            Place::Definition(p) => Some(&mut p.view),
+            Place::Instance(p) => Some(&mut p.view),
+            Place::File(p) => Some(&mut p.view),
+            Place::Diff(p) => Some(p.view_mut()),
+            Place::Definitions(_) | Place::Search(_) | Place::Incidents(_) | Place::Batches(_) | Place::Settings(_) | Place::Xml(_) => None,
         }
     }
     pub fn has_diagram(&self) -> bool {
-        matches!(self, Place::Definition(_) | Place::Instance(_) | Place::File(_))
+        matches!(self, Place::Definition(_) | Place::Instance(_) | Place::File(_) | Place::Diff(_))
     }
 }

@@ -353,15 +353,18 @@ impl DefinitionPlace {
                             if let Some(t) = d.history_time_to_live {
                                 crate::widgets::kv(ui, "history TTL", &crate::t!("n-days", n = t));
                             }
-                            if let Some(desc) = &d.description {
-                                crate::widgets::kv(ui, "description", desc);
-                            }
                             for p in model_dock.executable_processes() {
                                 for (k, v) in &p.attrs {
                                     if k.starts_with("camunda:") {
                                         crate::widgets::kv(ui, k.trim_start_matches("camunda:"), v);
                                     }
                                 }
+                            }
+                            // The process documentation as written in the XML (the REST
+                            // description is the same text); last, since it can be long.
+                            let doc = model_dock.processes.iter().find(|p| p.id == d.key).and_then(|p| p.documentation.clone()).or_else(|| d.description.clone());
+                            if let Some(desc) = doc {
+                                crate::widgets::doc_block(ui, ("def-desc", &d.id), "description", &desc);
                             }
                         });
                     }
@@ -385,8 +388,9 @@ impl DefinitionPlace {
             let style = tokens.diagram_style();
             let settings = app.diagram_settings();
             let model2 = model.clone();
+            let xml_editor = !app.settings.xml_editor.trim().is_empty();
             let out = viewport::Diagram { model: &model, style: &style, settings: &settings }.show(ui, &mut self.view, &mut self.overlays, &|_, _| {}, &mut |ui, target| {
-                crate::app::diagram_context_menu(ui, &model2, target, &mut actions);
+                crate::app::diagram_context_menu(ui, &model2, target, xml_editor, &mut actions);
             });
             if let Some((kind, id)) = out.badge_clicked {
                 match kind {
@@ -445,11 +449,16 @@ impl DefinitionPlace {
         if let Some((id, mode)) = open_instance {
             app.navigate(Nav::Instance { id }, mode);
         }
+        let source = crate::places::source::DocSource::Definition(self.def_id.clone());
         for a in actions {
             match a {
                 InspectorAction::Select(r) => {
                     self.view.select(Some(r));
                     self.view.fit_refs(&model, std::iter::once(r));
+                }
+                InspectorAction::FitDiagram => self.view.fit_all(),
+                InspectorAction::ViewXml(_) | InspectorAction::XmlExternal(..) => {
+                    crate::places::xml::handle_action(app, crate::places::xml::XmlDoc::Single(source.clone()), &[(source.clone(), model.clone())], &a);
                 }
                 InspectorAction::OpenDefinitionKey(k) => app.navigate(Nav::DefinitionKey { key: k }, NavMode::Here),
                 InspectorAction::InstancesAt(a) => {

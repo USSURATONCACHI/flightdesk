@@ -83,6 +83,10 @@ pub struct Settings {
     pub find_instances: bool,
     pub find_business_keys: bool,
     pub find_ids: bool,
+    /// External editor for XML, e.g. `code -g {file}:{line}:{col}`; empty hides the menu item.
+    pub xml_editor: String,
+    /// Recently opened or compared local BPMN files, newest first.
+    pub recent_files: Vec<String>,
 }
 
 impl Default for Settings {
@@ -115,6 +119,8 @@ impl Default for Settings {
             find_instances: true,
             find_business_keys: true,
             find_ids: true,
+            xml_editor: String::new(),
+            recent_files: vec![],
         }
     }
 }

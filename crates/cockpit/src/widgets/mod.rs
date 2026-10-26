@@ -1,5 +1,6 @@
 pub mod confirm;
 pub mod kv;
+pub mod markdown;
 pub mod split;
 pub mod toast;
 
